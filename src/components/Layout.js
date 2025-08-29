@@ -25,7 +25,8 @@ import {
   RateReview as ReviewIcon,
   Person as PersonIcon,
   Settings as SettingsIcon,
-  Logout as LogoutIcon
+  Logout as LogoutIcon,
+  Science as PipelinesIcon
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import UniversalSearch from './UniversalSearch';
@@ -58,6 +59,7 @@ function Layout() {
   const menuItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
     { text: 'Search', icon: <SearchIcon />, path: '/search' },
+    { text: 'Pipelines', icon: <PipelinesIcon />, path: '/pipelines' },
     { text: 'Documents', icon: <DocumentIcon />, path: '/document/recent' },
     { text: 'Peer Review', icon: <ReviewIcon />, path: '/peer-review' },
     { text: 'Profile', icon: <PersonIcon />, path: '/profile' },

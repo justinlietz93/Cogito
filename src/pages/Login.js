@@ -64,7 +64,7 @@ function Login() {
       >
         <Box sx={{ textAlign: 'center', mb: 3 }}>
           <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 'bold' }}>
-            LegalScience
+            Cogito Research
           </Typography>
           <Typography variant="subtitle1" color="text.secondary">
             Sign in to your account

@@ -198,7 +198,7 @@ function UniversalSearch() {
         </IconButton>
         <InputBase
           sx={{ ml: 1, flex: 1 }}
-          placeholder="Search legal cases and scientific papers..."
+          placeholder="Search research sources (e.g., ArXiv; optional legal datasets)..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           disabled={isSearching}

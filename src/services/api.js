@@ -4,6 +4,87 @@ import axios from 'axios';
 const ARXIV_API_URL = 'https://export.arxiv.org/api/query';
 const WESTLAW_API_URL = '/api/westlaw'; // Proxy to backend which handles Westlaw API
 
+// Backend API base (relative by default; can be overridden via env)
+const BACKEND_BASE =
+  process.env.REACT_APP_COGITO_API_BASE ||
+  (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
+const api = axios.create({ baseURL: BACKEND_BASE });
+
+// --- Cogito Backend Integrations (Critique / Thesis / Enhancer) ---
+
+/**
+ * Run Critique Council pipeline via backend.
+ * opts: {
+ *   input_path?: string,
+ *   ingest_batch?: boolean,
+ *   scientific?: boolean,
+ *   peer_review?: boolean,
+ *   log_ingestion_choices?: boolean,
+ *   pdf_backend?: "auto"|"pymupdf"|"pdfminer"|"pypdf2",
+ *   ocr_enable?: boolean,
+ *   ocr_lang?: string,
+ *   tesseract_cmd?: string,
+ *   audio_enable?: boolean,
+ *   whisper_backend?: "whisper_local"|"whisper_openai",
+ *   whisper_model?: string,
+ *   latex?: boolean,
+ *   latex_compile?: boolean,
+ *   latex_output_dir?: string
+ * }
+ */
+export const runCritique = async (opts = {}) => {
+  try {
+    const { data } = await api.post('/api/critique', opts);
+    return data;
+  } catch (error) {
+    const msg = error?.response?.data || error?.message || 'Failed to execute critique';
+    throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+  }
+};
+
+/**
+ * Run Thesis Builder via backend.
+ * opts: { concept?: string, file?: string (dir or file), model?: string, force_fallback?: boolean, output_dir?: string }
+ */
+export const runThesis = async (opts = {}) => {
+  try {
+    const { data } = await api.post('/api/thesis', opts);
+    return data;
+  } catch (error) {
+    const msg = error?.response?.data || error?.message || 'Failed to execute thesis builder';
+    throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+  }
+};
+
+/**
+ * Run Research Enhancer via backend.
+ * opts: { model?: string, force_fallback?: boolean }
+ */
+export const runEnhancer = async (opts = {}) => {
+  try {
+    const { data } = await api.post('/api/enhancer', opts);
+    return data;
+  } catch (error) {
+    const msg = error?.response?.data || error?.message || 'Failed to execute research enhancer';
+    throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+  }
+};
+
+/**
+ * Fetch recent results for UI listing.
+ */
+export const getResults = async () => {
+  try {
+    const { data } = await api.get('/api/results');
+    return data;
+  } catch (error) {
+    const msg = error?.response?.data || error?.message || 'Failed to fetch results';
+    throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+  }
+};
+
+// --- ArXiv public API (unchanged dev helper) ---
+
 // ArXiv API search function
 export const searchArxiv = async (query, filters = {}) => {
   try {

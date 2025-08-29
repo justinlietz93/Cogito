@@ -45,7 +45,7 @@ function Dashboard() {
                 Quick Search
               </Typography>
               <Typography variant="body2" color="text.secondary" paragraph>
-                Search across legal and scientific databases to find relevant documents.
+                Search across scientific sources (e.g., ArXiv) and optional legal datasets to find relevant documents.
               </Typography>
             </CardContent>
             <CardActions sx={{ p: 2, pt: 0 }}>
@@ -188,7 +188,7 @@ function Dashboard() {
                     <CardContent>
                       <Typography variant="subtitle1">{topic}</Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Trending in both legal and scientific research
+                        Trending across research domains
                       </Typography>
                     </CardContent>
                     <CardActions>

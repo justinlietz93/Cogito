@@ -12,6 +12,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import ProtectedRoute from './components/ProtectedRoute';
 import { useAuth } from './contexts/AuthContext';
+import Pipelines from './pages/Pipelines';
 
 function App() {
   const { isAuthenticated, loading } = useAuth();
@@ -31,6 +32,7 @@ function App() {
         <Route path="peer-review" element={<PeerReview />} />
         <Route path="profile" element={<Profile />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="pipelines" element={<Pipelines />} />
       </Route>
     </Routes>
   );
