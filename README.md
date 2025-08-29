@@ -326,14 +326,22 @@ Cogito offers multiple ways to accelerate your research with truth-seeking rigor
 ### For Critical Analysis
 
 ```bash
-# Generate a comprehensive philosophical and scientific critique
+# Option A: Use default INPUT/content.txt (recommended)
+mkdir -p INPUT
+echo "Your content goes here." > INPUT/content.txt
+python run_critique.py --scientific
+
+# Option B: Point to a specific file
 python run_critique.py your_document.txt --scientific
 
 # Produce a formal academic peer review
-python run_critique.py your_document.txt --scientific --PR
+python run_critique.py --scientific --PR
 
 # Generate publication-ready LaTeX output
-python run_critique.py your_document.txt --scientific --PR --latex
+python run_critique.py --scientific --PR --latex
+
+# Batch mode: ingest all files in a directory (PDF/Image/Audio supported via adapters)
+python run_critique.py INPUT/ --ingest-batch --pdf-backend auto --ocr-enable --audio-enable
 ```
 
 ### For Research Synthesis
@@ -345,6 +353,29 @@ python src/syncretic_catalyst/thesis_builder.py "Your research concept or hypoth
 # Enhance an existing research project with semantic literature search
 python src/syncretic_catalyst/research_enhancer.py
 ```
+
+#### Input Ingestion and Backends
+
+Cogito now supports robust input ingestion across multiple file types with auto-detection and batch mode:
+- Default input: INPUT/content.txt is auto-detected when no path is passed. You may pass a file or a directory.
+- Batch mode: --ingest-batch concatenates all files in a directory in a stable order with clear file headers.
+- PDF extraction: --pdf-backend {auto, pymupdf, pdfminer, pypdf2}. The default (auto) tries PyMuPDF → pdfminer.six → PyPDF2.
+- OCR for images: Enabled by default via pytesseract. CLI override: --ocr-enable/--no-ocr, --ocr-lang, --tesseract-cmd.
+- Audio transcription: Enabled by default via local Whisper. CLI override: --audio-enable/--no-audio, --audio-backend {whisper_local, whisper_openai}, --whisper-model.
+- Per-file logging: In batch mode, the chosen backend is logged per file for transparency.
+
+Configuration toggles live in config.yaml under ingestion:
+- ingestion.pdf.backend: auto
+- ingestion.ocr.enabled: true
+- ingestion.ocr.languages: eng
+- ingestion.ocr.tesseract_cmd: ""
+- ingestion.audio.enabled: true
+- ingestion.audio.backend: whisper_local
+- ingestion.audio.whisper_model: base
+
+System prerequisites (when using these features):
+- Tesseract OCR: e.g., sudo apt-get install tesseract-ocr (macOS: brew install tesseract)
+- FFmpeg (for Whisper): e.g., sudo apt-get install ffmpeg (macOS: brew install ffmpeg)
 
 ## What Cogito Produces
 
@@ -448,11 +479,25 @@ echo "OPENAI_API_KEY=your_key_here" >> .env
 ### Quick Start
 
 ```bash
-# Run a critique with scientific peer review
-python run_critique.py sample_content.txt --scientific --PR
+# Run a critique with scientific peer review (uses INPUT/content.txt by default)
+mkdir -p INPUT
+echo "Sample content" > INPUT/content.txt
+python run_critique.py --scientific --PR
+
+# Or specify a particular file or directory
+python run_critique.py path/to/your_file.txt --scientific --PR
+python run_critique.py INPUT/ --ingest-batch --scientific --PR
 
 # Generate a thesis on quantum computing
 python src/syncretic_catalyst/thesis_builder.py "Quantum computation applied to climate modeling"
+```
+
+### Smoke Test
+
+Run the ingestion smoke test to validate default file resolution, batch concatenation, and PDF/OCR/Audio adapters:
+
+```bash
+python -m pytest -q tests/smoke_ingestion_test.py
 ```
 
 ## Learn More

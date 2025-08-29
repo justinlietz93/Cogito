@@ -12,7 +12,7 @@ import os
 from typing import Dict, List, Any, Optional, Tuple
 
 # Import provider factory for LLM clients
-from .providers import call_with_retry
+# Import moved to a function to avoid circular dependency.
 
 # Import the peer review enhancement text
 from .reasoning_agent import PEER_REVIEW_ENHANCEMENT
@@ -92,6 +92,7 @@ def generate_judge_summary_and_score(original_content: str, adjusted_trees: List
             judge_logger.info("Peer Review enhancement applied to judge prompt.")
 
         # Use the provider factory to call the appropriate LLM based on config
+        from .providers import call_with_retry
         judge_result, model_used = call_with_retry(
             prompt_template=final_judge_prompt,
             context=context,

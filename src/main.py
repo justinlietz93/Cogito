@@ -92,20 +92,15 @@ if __name__ == '__main__':
     # Synchronous test function
     def direct_critique_test(file_path: str) -> str:
         print(f"Initiating direct critique test for: {file_path}")
-        # Use config from file if available, else dummy
-        config_path = os.path.join(project_root, 'config.json')
-        test_config = {}
-        if os.path.exists(config_path):
-             try:
-                 with open(config_path, 'r') as f:
-                      test_config = json.load(f)
-                 print("Loaded config from config.json for test.")
-             except Exception as cfg_e:
-                  print(f"Warning: Could not load config.json: {cfg_e}. Using dummy config.")
-                  test_config = {'api': {'gemini': {'retries': 1}}, 'reasoning_tree': {}, 'council_orchestrator': {}}
-        else:
-             print("Warning: config.json not found. Using dummy config.")
-             test_config = {'api': {'gemini': {'retries': 1}}, 'reasoning_tree': {}, 'council_orchestrator': {}}
+        # Load unified YAML configuration
+        try:
+            # Import config_loader after adjusting sys.path above
+            from src.config_loader import config_loader as direct_config_loader
+            test_config = direct_config_loader.config
+            print("Loaded config from config.yaml for test.")
+        except Exception as cfg_e:
+            print(f"Warning: Could not load config.yaml: {cfg_e}. Using minimal fallback config.")
+            test_config = {'api': {'gemini': {'retries': 1}}, 'reasoning_tree': {}, 'council_orchestrator': {}}
 
         # Add dummy resolved_key if needed for direct run (assuming no .env)
         if 'resolved_key' not in test_config.get('api',{}):
@@ -138,13 +133,13 @@ if __name__ == '__main__':
             print(f"An unexpected error occurred during direct critique test: {e}")
             raise Exception(f"Direct critique test failed unexpectedly: {e}") from e
 
-    # Path relative to the 'critique_council' directory
-    test_file_rel = 'content.txt' # Use content.txt as default test
+    # Default input now lives under INPUT/
+    test_file_rel = os.path.join('INPUT', 'content.txt')  # Use INPUT/content.txt as default test
     print(f"--- Running Example Usage (Direct Execution Context) ---")
     test_file_abs = os.path.abspath(os.path.join(project_root, test_file_rel))
 
     if not os.path.exists(test_file_abs):
-         print(f"Error: Test file '{test_file_rel}' (abs: {test_file_abs}) not found in project root.")
+         print(f"Error: Default input '{test_file_rel}' not found (abs: {test_file_abs}). Place files in the INPUT/ folder.")
          sys.exit(1)
 
     try:

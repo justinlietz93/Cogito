@@ -29,7 +29,7 @@ The Syncretic Catalyst toolkit leverages your existing research documents, combi
 
 ### Basic Usage
 
-1. Create your research documents in the `some_project/doc` directory
+1. Create your research documents in the `src/syncretic_catalyst/workspaces/some_project/doc` directory
 2. Run the research enhancer script:
 
 ```bash
@@ -64,7 +64,7 @@ python src/syncretic_catalyst/research_enhancer.py --model deepseek
 
 ## Output Files
 
-The script produces several output files in the `some_project` directory:
+The script produces several output files in the `output_results/syncretic_catalyst/some_project` directory:
 
 1. `key_concepts.json` - Key concepts extracted from your research
 2. `relevant_papers.json` - Detailed metadata of relevant ArXiv papers (JSON format)

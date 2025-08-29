@@ -2,9 +2,10 @@
 """
 AI Research Proposal Generator
 
-This module reads all files generated in the 'some_project/doc' folder,
-sends the content to an AI model, and has the AI generate a formal 
-academic research proposal paper.
+This module reads all files generated in the 'src/syncretic_catalyst/workspaces/some_project/doc' folder,
+sends the content to an AI model, and has the AI generate a formal
+academic research proposal paper. Results are written to
+'output_results/syncretic_catalyst/some_project'.
 """
 
 import os
@@ -141,12 +142,15 @@ def generate_ai_proposal(model: str = "claude") -> None:
     # Check environment variables
     check_environment_variables()
     
-    doc_folder = Path("some_project/doc")
-    output_folder = Path("some_project")
+    # Use modularized workspace and write results to universal output directory
+    doc_folder = Path("src/syncretic_catalyst/workspaces/some_project/doc")
+    output_folder = Path("output_results") / "syncretic_catalyst" / "some_project"
+    # Ensure output directory exists
+    output_folder.mkdir(parents=True, exist_ok=True)
     
     # Check if the folder exists
     if not doc_folder.exists():
-        print("Error: 'some_project/doc' folder does not exist.")
+        print("Error: 'src/syncretic_catalyst/workspaces/some_project/doc' folder does not exist.")
         return
     
     # Read all the relevant files

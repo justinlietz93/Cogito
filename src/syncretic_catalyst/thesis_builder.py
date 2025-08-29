@@ -24,9 +24,14 @@ import re
 import time
 from datetime import datetime
 from collections import defaultdict
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add project root to path to ensure imports work properly
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+# The project is now an installable package, so this is no longer needed.
+# sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 # Import vector search functionality
 from src.arxiv.arxiv_vector_reference_service import ArxivVectorReferenceService
@@ -293,7 +298,7 @@ class ThesisBuilder:
         # Setup vector reference service
         config = {
             'arxiv': {
-                'cache_dir': 'storage/arxiv_cache',
+                'cache_dir': 'storage/arxiv_cache_new',
                 'vector_cache_dir': 'storage/arxiv_vector_cache',
                 'cache_ttl_days': 30,
                 'force_vector_fallback': force_fallback
@@ -557,20 +562,7 @@ def build_thesis(concept: str,
     
     # Initialize AI client using the orchestrator
     try:
-        # Try import with different approaches
-        try:
-            # Try relative import first
-            from .ai_clients import AIOrchestrator
-            logger.info("Imported AIOrchestrator (relative import)")
-        except ImportError:
-            # Try absolute import
-            try:
-                from src.syncretic_catalyst.ai_clients import AIOrchestrator
-                logger.info("Imported AIOrchestrator (absolute import)")
-            except ImportError:
-                # Fall back to direct import
-                from ai_clients import AIOrchestrator
-                logger.info("Imported AIOrchestrator (direct import)")
+        from src.syncretic_catalyst.ai_clients import AIOrchestrator
                 
         # Create the orchestrator with optional model override
         orchestrator = AIOrchestrator(model_name=model)
@@ -636,23 +628,86 @@ def build_thesis(concept: str,
         logger.info(summary)
 
 
-if __name__ == "__main__":
+def main():
+    """Main function to run the thesis builder from the command line."""
     parser = argparse.ArgumentParser(
         description="Build a comprehensive thesis from a concept using multi-agent research"
     )
-    parser.add_argument("concept", help="The concept, theory, or hypothesis to research")
-    parser.add_argument('--model', choices=['claude', 'deepseek'], default='claude', 
+    # Allow either a single concept or a file containing multiple concepts
+    parser.add_argument("input", help="The concept, theory, or hypothesis to research, or a file path containing one concept per line")
+    parser.add_argument('--file', action='store_true', help='Treat the input as a file path')
+    parser.add_argument('--model', choices=['claude', 'deepseek', 'xai', 'openrouter'], default='claude',
                         help='AI model to use (claude or deepseek)')
-    parser.add_argument('--force-fallback', action='store_true', 
+    parser.add_argument('--force-fallback', action='store_true',
                         help='Force use of fallback vector store implementation')
     parser.add_argument('--output-dir', default='syncretic_output',
                         help='Directory for output files')
     
     args = parser.parse_args()
     
-    build_thesis(
-        concept=args.concept,
-        model=args.model,
-        force_fallback=args.force_fallback,
-        output_dir=args.output_dir
-    )
+    if args.file:
+        try:
+            if os.path.isdir(args.input):
+                # Recursive directory ingestion (default behavior)
+                allowed_exts = {'.txt', '.md', '.markdown'}
+                collected: List[str] = []
+                for root, _, files in os.walk(args.input):
+                    for fname in files:
+                        if os.path.splitext(fname)[1].lower() in allowed_exts:
+                            collected.append(os.path.join(root, fname))
+                collected.sort()
+                
+                if not collected:
+                    logger.error(f"No input files found in directory {args.input} for batch processing.")
+                    return
+                
+                logger.info(f"Found {len(collected)} files in {args.input} (recursive). Starting batch processing.")
+                for i, path in enumerate(collected, 1):
+                    try:
+                        with open(path, 'r', encoding='utf-8') as f:
+                            concept = f.read().strip()
+                    except Exception as fe:
+                        logger.error(f"Failed to read {path}: {fe}")
+                        continue
+                    
+                    logger.info(f"--- Processing file {i}/{len(collected)}: {path} ---")
+                    build_thesis(
+                        concept=concept,
+                        model=args.model,
+                        force_fallback=args.force_fallback,
+                        output_dir=args.output_dir
+                    )
+                    logger.info(f"--- Completed file {i}/{len(collected)}: {path} ---")
+            else:
+                # Single file with '---' delimiters (existing behavior)
+                with open(args.input, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                concepts = [concept.strip() for concept in content.split('---') if concept.strip()]
+                
+                logger.info(f"Found {len(concepts)} concepts in {args.input}. Starting batch processing.")
+                for i, concept in enumerate(concepts, 1):
+                    logger.info(f"--- Processing concept {i}/{len(concepts)} ---")
+                    build_thesis(
+                        concept=concept,
+                        model=args.model,
+                        force_fallback=args.force_fallback,
+                        output_dir=args.output_dir
+                    )
+                    logger.info(f"--- Completed concept {i}/{len(concepts)} ---")
+            
+        except FileNotFoundError:
+            logger.error(f"Error: Input file not found at {args.input}")
+        except Exception as e:
+            logger.error(f"An error occurred during batch processing: {e}")
+            
+    else:
+        # Process a single concept from the command line
+        build_thesis(
+            concept=args.input,
+            model=args.model,
+            force_fallback=args.force_fallback,
+            output_dir=args.output_dir
+        )
+
+if __name__ == "__main__":
+    main()

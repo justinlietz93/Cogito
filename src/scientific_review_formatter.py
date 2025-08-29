@@ -11,7 +11,7 @@ import json
 from typing import Dict, Any, Optional
 
 # Import provider factory for LLM clients
-from .providers import call_with_retry
+from .providers.openai_client import call_openai_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -204,7 +204,7 @@ def format_scientific_peer_review(
                 formatter_config["api"]["openai"]["max_tokens"] = max_tokens
         
         # Call provider factory with OpenAI set as primary provider
-        review_content, model_used = call_with_retry(
+        review_content, model_used = call_openai_with_retry(
             prompt_template=prompt,
             context={},  # Context is already embedded in the prompt template
             config=formatter_config,

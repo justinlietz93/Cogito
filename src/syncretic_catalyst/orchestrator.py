@@ -226,8 +226,8 @@ def main():
             [f"{msg['role']}: {msg['content']}" for msg in conversation if msg['role'] == 'user']
         )
 
-    # Prepare "some_project" folder - use pathlib for cross-platform compatibility
-    PROJECT_DIR = "some_project"
+    # Prepare workspace folder under syncretic_catalyst - use pathlib for cross-platform compatibility
+    PROJECT_DIR = "src/syncretic_catalyst/workspaces/some_project"
     
     # Pre-check to ensure we can create and write to the directories
     try:
@@ -477,7 +477,7 @@ def main():
                     apply_yn = 'y'
                 else:
                     apply_yn = input(
-                        "Apply changes (create/update files in some_project)? "
+                        "Apply changes (create/update files in src/syncretic_catalyst/workspaces/some_project)? "
                         "(y = apply, r = retry step, n = skip step): "
                     ).strip().lower()
                 
@@ -520,9 +520,9 @@ def main():
                         write_project_file(PROJECT_DIR, pf)
                     
                     if file_written:
-                        print(f"DIRECT WRITE: Successfully wrote {output_file} to some_project/{output_file}")
+                        print(f"DIRECT WRITE: Successfully wrote {output_file} to src/syncretic_catalyst/workspaces/some_project/{output_file}")
                     
-                    print("Changes saved to some_project/.")
+                    print("Changes saved to src/syncretic_catalyst/workspaces/some_project/.")
                     # Store step output in step_outputs
                     step_outputs[i] = ai_response
                     # Done with this step
@@ -538,8 +538,8 @@ def main():
                 print("Invalid choice. Please enter 'y', 's', or 'q'.")
 
     print("\n=== Breakthrough Idea Process Completed ===")
-    print("You can check 'some_project/doc/' for your breakthrough blueprint files.")
-
+    print("You can check 'src/syncretic_catalyst/workspaces/some_project/doc/' for your breakthrough blueprint files.")
+    
 
 def extract_file_paths_from_structure(structure_file):
     """Extract file paths from the project structure file"""

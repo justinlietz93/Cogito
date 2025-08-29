@@ -17,6 +17,19 @@ from .decorators import with_retry, with_error_handling, cache_result
 
 logger = logging.getLogger(__name__)
 
+def normalize_openai_model_name(model_name: str) -> str:
+    """Normalize model slugs for direct OpenAI API use.
+    
+    - Strips vendor prefixes like 'openai/' so the OpenAI SDK receives 'gpt-5', not 'openai/gpt-5'.
+    - Leaves other names unchanged.
+    """
+    if not model_name:
+        return model_name
+    lower = model_name.lower()
+    if lower.startswith("openai/"):
+        return model_name.split("/", 1)[1]
+    return model_name
+
 @with_error_handling
 @with_retry(max_attempts=3, delay_base=2.0)
 def call_openai_with_retry(
@@ -50,7 +63,8 @@ def call_openai_with_retry(
     max_tokens = kwargs.get('max_tokens') or openai_config.get('max_tokens')
     
     # Get model and API key
-    default_model = openai_config.get('model', 'o1')  # Use o1 as default model
+    default_model_raw = openai_config.get('model', 'o1')  # Use o1 as default model if unspecified
+    default_model = normalize_openai_model_name(default_model_raw)
     api_key = openai_config.get('resolved_key') or os.getenv('OPENAI_API_KEY')
     
     if not api_key:

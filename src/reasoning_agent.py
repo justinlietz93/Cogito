@@ -14,7 +14,7 @@ from typing import Dict, List, Any, Optional, Union
 # Import reasoning tree logic
 from .reasoning_tree import execute_reasoning_tree # Now synchronous
 # Import provider factory for LLM clients
-from .providers import call_with_retry
+# Import moved to functions to avoid circular dependency
 
 # Define the base path for prompts relative to this file's location
 PROMPT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'prompts'))
@@ -379,6 +379,7 @@ def common_arbitrate(self, original_content: str, initial_critiques: List[Dict[s
 
     try:
         # Expecting structured JSON with adjustments, score, and justification
+        from .providers import call_with_retry
         arbitration_result, model_used = call_with_retry(
             prompt_template=final_style_directives, # Use potentially enhanced directives
             context=arbitration_context,

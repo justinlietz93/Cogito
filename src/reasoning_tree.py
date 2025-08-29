@@ -10,7 +10,7 @@ import uuid
 import json
 
 # Import the provider factory
-from .providers import call_with_retry, ProviderError, ApiCallError, ApiResponseError, JsonParsingError, JsonProcessingError
+# Import moved to functions to avoid circular dependency
 
 # Default configuration values
 DEFAULT_MAX_DEPTH = 3
@@ -91,6 +91,7 @@ def execute_reasoning_tree(
         "assigned_point": current_assigned_point.get('point', '') if current_assigned_point else None # Add assigned point text if available
     }
     try:
+        from .providers import call_with_retry, ProviderError, ApiCallError, ApiResponseError, JsonParsingError, JsonProcessingError
         assessment_result, model_used_for_assessment = call_with_retry(
             prompt_template=assessment_prompt_template,
             context=assessment_context,
@@ -147,6 +148,7 @@ Return ONLY a JSON list of strings, where each string is a concise description o
         "content": initial_content
     }
     try:
+        from .providers import call_with_retry, ProviderError, ApiCallError, ApiResponseError, JsonParsingError, JsonProcessingError
         decomposition_result, model_used_for_decomposition = call_with_retry(
             prompt_template=decomposition_prompt_template,
             context=decomposition_context,

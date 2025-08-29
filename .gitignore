@@ -101,3 +101,17 @@ file_stash/*
 storage/
 storage/arxiv_cache/
 .env
+
+# Ingestion workspace and outputs
+INPUT/
+critiques/
+output_results/
+logs/
+latex_output/
+*.log
+
+# Syncretic Catalyst temporary workspaces
+src/syncretic_catalyst/workspaces/
+
+# Temp concatenation files created by ingestion
+cogito_input_*.txt

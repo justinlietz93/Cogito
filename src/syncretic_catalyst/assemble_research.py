@@ -30,19 +30,19 @@ def extract_content(filepath):
 def main():
     # Define the order of files and their logical numbering
     file_order = [
-        ("some_project/doc/CONTEXT_CONSTRAINTS.md", "1"),
-        ("some_project/doc/DIVERGENT_SOLUTIONS.md", "2"),
-        ("some_project/doc/DEEP_DIVE_MECHANISMS.md", "3"),
-        ("some_project/doc/SELF_CRITIQUE_SYNERGY.md", "4"),
-        ("some_project/doc/MISSING_COMPONENTS.md", "5"),
-        ("some_project/doc/IMPLEMENTATION_PATH.md", "6"),
-        ("some_project/doc/NOVELTY_CHECK.md", "7"),
-        ("some_project/doc/ELABORATIONS.md", "8"),
-        ("some_project/doc/BREAKTHROUGH_BLUEPRINT.md", "9")
+        ("src/syncretic_catalyst/workspaces/some_project/doc/CONTEXT_CONSTRAINTS.md", "1"),
+        ("src/syncretic_catalyst/workspaces/some_project/doc/DIVERGENT_SOLUTIONS.md", "2"),
+        ("src/syncretic_catalyst/workspaces/some_project/doc/DEEP_DIVE_MECHANISMS.md", "3"),
+        ("src/syncretic_catalyst/workspaces/some_project/doc/SELF_CRITIQUE_SYNERGY.md", "4"),
+        ("src/syncretic_catalyst/workspaces/some_project/doc/MISSING_COMPONENTS.md", "5"),
+        ("src/syncretic_catalyst/workspaces/some_project/doc/IMPLEMENTATION_PATH.md", "6"),
+        ("src/syncretic_catalyst/workspaces/some_project/doc/NOVELTY_CHECK.md", "7"),
+        ("src/syncretic_catalyst/workspaces/some_project/doc/ELABORATIONS.md", "8"),
+        ("src/syncretic_catalyst/workspaces/some_project/doc/BREAKTHROUGH_BLUEPRINT.md", "9")
     ]
     
-    # Output file
-    target_file = "some_project/doc/COMPREHENSIVE_MANUAL.md"
+    # Output file (final assembled manual goes to universal output_results)
+    target_file = "output_results/syncretic_catalyst/some_project/COMPREHENSIVE_MANUAL.md"
     
     # Ensure the directory exists
     os.makedirs(os.path.dirname(target_file), exist_ok=True)

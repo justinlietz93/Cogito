@@ -12,7 +12,7 @@ import json
 import os
 from typing import Dict, List, Any, Optional
 
-from .providers import call_with_retry
+# Import moved to a function to avoid circular dependency.
 from .arxiv_reference_service import ArxivReferenceService
 
 logger = logging.getLogger(__name__)
@@ -56,6 +56,7 @@ class ContentAssessor:
         
         try:
             # Call the provider to extract points
+            from .providers import call_with_retry
             result, model_used = call_with_retry(
                 prompt_template=prompt,
                 context={},

@@ -19,7 +19,7 @@ from typing import List, Dict, Any, Optional, Union
 from src.providers.model_config import get_primary_provider
 
 # Import provider implementations with unified interfaces
-from src.providers import anthropic_client, deepseek_client, openai_client, gemini_client
+from src.providers import anthropic_client, deepseek_client, openai_client, gemini_client, xai_client, openrouter_client, ollama_client
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -41,7 +41,7 @@ class AIOrchestrator:
         
         Args:
             model_name: Optional override for model name. If not provided, uses the primary_provider from config.
-                       Supported values: "claude", "anthropic", "deepseek", "openai", "gemini"
+                       Supported values: "claude", "anthropic", "deepseek", "openai", "gemini", "openrouter", "ollama"
         """
         # If model_name not provided, use the primary provider from config
         self.model_name = model_name.lower() if model_name else PRIMARY_PROVIDER
@@ -55,6 +55,12 @@ class AIOrchestrator:
             self.provider = "openai"
         elif self.model_name == "gemini":
             self.provider = "gemini"
+        elif self.model_name == "xai":
+            self.provider = "xai"
+        elif self.model_name == "openrouter":
+            self.provider = "openrouter"
+        elif self.model_name == "ollama":
+            self.provider = "ollama"
         else:
             logger.warning(f"Unknown model: {self.model_name}, falling back to default: {PRIMARY_PROVIDER}")
             self.__init__(PRIMARY_PROVIDER)  # Reinitialize with default provider
@@ -101,6 +107,21 @@ class AIOrchestrator:
             )
         elif self.provider == "gemini":
             return gemini_client.run_gemini_client(
+                messages=messages,
+                max_tokens=max_tokens
+            )
+        elif self.provider == "xai":
+            return xai_client.run_xai_client(
+                messages=messages,
+                max_tokens=max_tokens
+            )
+        elif self.provider == "openrouter":
+            return openrouter_client.run_openrouter_client(
+                messages=messages,
+                max_tokens=max_tokens
+            )
+        elif self.provider == "ollama":
+            return ollama_client.run_ollama_client(
                 messages=messages,
                 max_tokens=max_tokens
             )

@@ -106,3 +106,93 @@ def get_gemini_config() -> Dict[str, Any]:
         gemini_config['temperature'] = 0.6
         
     return gemini_config
+
+
+@cache_result(ttl=60)  # Cache for 60 seconds
+def get_openrouter_config() -> Dict[str, Any]:
+    """
+    Get OpenRouter model configuration from the unified YAML config.
+
+    Returns:
+        Dictionary containing OpenRouter configuration settings
+    """
+    api_config = get_api_config()
+    openrouter_config = api_config.get('openrouter', {})
+
+    # Set defaults if not specified
+    if 'model' not in openrouter_config:
+        openrouter_config['model'] = 'x-ai/grok-4'
+    if 'max_tokens' not in openrouter_config:
+        openrouter_config['max_tokens'] = 8192
+    if 'temperature' not in openrouter_config:
+        openrouter_config['temperature'] = 0.2
+    if 'retries' not in openrouter_config:
+        openrouter_config['retries'] = 3
+    if 'api_base' not in openrouter_config:
+        openrouter_config['api_base'] = os.getenv('OPENROUTER_API_BASE', 'https://openrouter.ai/api/v1')
+
+    # Resolve API key from environment
+    if 'api_key' not in openrouter_config:
+        openrouter_config['api_key'] = os.getenv('OPENROUTER_API_KEY')
+
+    return openrouter_config
+
+
+@cache_result(ttl=60)  # Cache for 60 seconds
+def get_xai_config() -> Dict[str, Any]:
+    """
+    Get XAI (Groq/X.ai) model configuration from the unified YAML config.
+
+    Returns:
+        Dictionary containing XAI configuration settings
+    """
+    api_config = get_api_config()
+    xai_config = api_config.get('xai', {})
+
+    # Set defaults if not specified
+    if 'model' not in xai_config:
+        xai_config['model'] = 'grok-1'
+    if 'max_tokens' not in xai_config:
+        xai_config['max_tokens'] = 8192
+    if 'temperature' not in xai_config:
+        xai_config['temperature'] = 0.2
+    if 'retries' not in xai_config:
+        xai_config['retries'] = 3
+
+    # Resolve API key from environment
+    if 'api_key' not in xai_config:
+        xai_config['api_key'] = os.getenv('XAI_API_KEY')
+
+    return xai_config
+
+@cache_result(ttl=60)  # Cache for 60 seconds
+def get_ollama_config() -> Dict[str, Any]:
+    """
+    Get Ollama (local inference) configuration from the unified YAML config.
+
+    Returns:
+        Dictionary containing Ollama configuration settings:
+        {
+          'model': 'llama3.1',
+          'max_tokens': 8192,
+          'temperature': 0.2,
+          'host': 'http://localhost:11434'  # or env OLLAMA_HOST
+        }
+    """
+    api_config = get_api_config()
+    ollama_cfg = dict(api_config.get('ollama', {}) or {})
+
+    # Defaults
+    if 'model' not in ollama_cfg:
+        ollama_cfg['model'] = 'gpt-oss:120b'
+    if 'max_tokens' not in ollama_cfg:
+        ollama_cfg['max_tokens'] = 8192
+    if 'temperature' not in ollama_cfg:
+        ollama_cfg['temperature'] = 0.2
+
+    # Host preference: config overrides env only if explicitly set; otherwise use env or default
+    env_host = os.getenv('OLLAMA_HOST')
+    if not ollama_cfg.get('host'):
+        ollama_cfg['host'] = env_host or 'http://localhost:11434'
+
+    return ollama_cfg

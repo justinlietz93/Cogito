@@ -347,18 +347,19 @@ def enhance_research(model: str = "claude", force_fallback: bool = False) -> Non
     """
     print("Starting Research Enhancement with Vector Search")
     
-    # 1. Set up paths
-    doc_folder = Path("some_project/doc")
-    output_folder = Path("some_project")
+    # 1. Set up paths (workspace under module tree, results in universal output directory)
+    WORKSPACE_DIR = Path("src/syncretic_catalyst/workspaces/some_project")
+    doc_folder = WORKSPACE_DIR / "doc"
+    output_folder = Path("output_results") / "syncretic_catalyst" / "some_project"
     
     # Create output folder if not exists
     output_folder.mkdir(parents=True, exist_ok=True)
     
     # Check if the folder exists
     if not doc_folder.exists():
-        print("Error: 'some_project/doc' folder does not exist.")
+        print("Error: 'src/syncretic_catalyst/workspaces/some_project/doc' folder does not exist.")
         doc_folder.mkdir(parents=True, exist_ok=True)
-        print("Created empty 'some_project/doc' folder. Please add your research documents.")
+        print("Created empty 'src/syncretic_catalyst/workspaces/some_project/doc' folder. Please add your research documents.")
         return
     
     # 2. Setup the vector reference service

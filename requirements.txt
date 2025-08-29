@@ -2,7 +2,22 @@ google-generativeai
 requests
 python-dotenv
 aiohttp
-openai>=1.0.0
+openai
 pyyaml
-numpy>=2.2.4
-anthropic>=0.49.0
+numpy
+anthropic
+
+# Syncretic Catalyst providers
+groq
+
+# PDF extraction backends (configurable)
+PyMuPDF
+pdfminer.six
+PyPDF2
+
+# Image OCR
+pillow
+pytesseract
+
+# Audio transcription
+openai-whisper

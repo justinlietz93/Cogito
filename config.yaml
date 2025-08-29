@@ -5,9 +5,9 @@
 api:
   primary_provider: "openai"
   gemini:
-    model_name: "gemini-2.5-pro-exp-03-25"
+    model_name: "gpt-5-2025-08-07"
     retries: 3
-    temperature: 0.6
+    temperature: 0.4
     top_p: 1.0
     top_k: 32
     max_output_tokens: 8192
@@ -19,6 +19,65 @@ api:
     retries: 3
     temperature: 0.2
     max_tokens: 8192
+  xai:
+    model: "x-ai/grok-4"
+    retries: 3
+    temperature: 0.2
+    max_tokens: 8192
+  openrouter:
+    model: "openai/gpt-5"
+    retries: 3
+    temperature: 0.2
+    max_tokens: 8192
+  ollama:
+    model: "gpt-oss:120b"
+    temperature: 0.2
+    max_tokens: 8192
+    host: "http://localhost:11434"
+
+# Ingestion settings (INPUT/ pipeline)
+ingestion:
+  input_dir: "INPUT"
+  batch:
+    enabled: true           # concatenate multiple files if more than one candidate exists
+    delimiter: "\n\n----- FILE: {path} -----\n\n"  # header between concatenated files
+    include_extensions:     # which extensions to consider in batch mode (order is prioritization)
+      - ".txt"
+      - ".xnl"
+      - ".md"
+      - ".markdown"
+      - ".json"
+      - ".yaml"
+      - ".yml"
+      - ".pdf"
+      - ".png"
+      - ".jpg"
+      - ".jpeg"
+      - ".tif"
+      - ".tiff"
+      - ".bmp"
+      - ".gif"
+      - ".webp"
+      - ".wav"
+      - ".mp3"
+      - ".m4a"
+      - ".flac"
+      - ".ogg"
+      - ".opus"
+      - ".webm"
+  pdf:
+    backend: "auto"         # auto | pymupdf | pdfminer | pypdf2
+  ocr:
+    enabled: true           # enabled by default per user request
+    engine: "pytesseract"   # currently supports pytesseract
+    languages: "eng"
+    tesseract_cmd: ""       # set if tesseract is not in PATH
+  audio:
+    enabled: true           # enabled by default per user request
+    engine: "whisper"
+    whisper:
+      backend: "local"      # local | openai
+      model: "base"         # local whisper model name
 
 # Reasoning tree configuration
 reasoning_tree:
@@ -38,7 +97,7 @@ arxiv:
   max_references_per_point: 3
   
   # Cache settings
-  cache_dir: "storage/arxiv_cache"
+  cache_dir: "storage/arxiv_cache_new"
   use_cache: true
   use_db_cache: true          # Whether to use database (SQLite) cache instead of file-based cache
   cache_ttl_days: 30          # Number of days before cached entries expire
