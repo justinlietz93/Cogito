@@ -37,6 +37,8 @@
 
 ## Why Cogito Transforms Research
 
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/5f6f4a5bb3144fe7aa389407310622a6)](https://app.codacy.com/gh/justinlietz93/Cogito?utm_source=github.com&utm_medium=referral&utm_content=justinlietz93/Cogito&utm_campaign=Badge_Grade)
+
 ### The Truth-Seeking Engine
 
 At its core, Cogito is designed to pursue truth with relentless determination:
