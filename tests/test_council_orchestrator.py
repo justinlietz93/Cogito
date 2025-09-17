@@ -120,13 +120,16 @@ def test_orchestrator_scientific_mode_uses_scientific_label(mock_self_critique, 
     assert not result['no_findings']
     assert result['points'], "Scientific runs should surface significant points in this scenario"
 
-    for point in result['points']:
-        area = point['area']
+    areas = [point['area'] for point in result['points']]
+
+    def _is_scientific(area: str) -> bool:
         cohort_label, separator, _ = area.partition(':')
-        if separator:
-            assert cohort_label.strip() == 'Scientific Analyst'
-        else:
-            assert area == 'Scientific Analyst'
+        return (
+            (separator and cohort_label.strip() == 'Scientific Analyst')
+            or (not separator and area == 'Scientific Analyst')
+        )
+
+    assert all(_is_scientific(area) for area in areas)
 
 
 # Patch the tree execution within the reasoning_agent module where it's called

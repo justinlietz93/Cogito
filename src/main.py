@@ -168,7 +168,9 @@ if __name__ == '__main__':
             raise e
         except Exception as e:
             print(f"An unexpected error occurred during direct critique test: {e}")
-            raise Exception(f"Direct critique test failed unexpectedly: {e}") from e
+            raise CritiqueExecutionError(
+                f"Direct critique test failed unexpectedly: {e}"
+            ) from e
 
     # Path relative to the 'critique_council' directory
     test_file_rel = 'content.txt' # Use content.txt as default test

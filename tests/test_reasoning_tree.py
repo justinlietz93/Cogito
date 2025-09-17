@@ -94,8 +94,17 @@ def test_node_contains_expected_fields(base_config):
     result = execute_reasoning_tree("Rich content for testing." * 5, STYLE_DIRECTIVES, "TestAgent", base_config)
 
     assert result is not None
-    for field_name in {"id", "claim", "evidence", "confidence", "severity", "recommendation", "concession", "sub_critiques"}:
-        assert field_name in result
+    expected_fields = {
+        "id",
+        "claim",
+        "evidence",
+        "confidence",
+        "severity",
+        "recommendation",
+        "concession",
+        "sub_critiques",
+    }
+    assert expected_fields <= result.keys()
 
 
 def test_node_missing_expected_fields_logs_warning(base_config, caplog):
