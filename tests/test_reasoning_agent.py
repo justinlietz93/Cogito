@@ -224,3 +224,47 @@ def test_self_critique_penalizes_concessions(agent_instance):
     concession_adjustment = adjustments['concession-claim']
     assert concession_adjustment['confidence_delta'] == pytest.approx(-0.09, abs=1e-3)
     assert 'conceded limitations' in concession_adjustment['reasoning'].lower()
+
+
+def test_self_critique_handles_conflicting_peer_evidence(agent_instance):
+    """Conflicting peer feedback should result in moderated adjustments."""
+
+    own_critique = {
+        'agent_style': agent_instance.style,
+        'critique_tree': {
+            'id': 'root-claim',
+            'claim': 'Conflicting finding',
+            'confidence': 0.6,
+            'severity': 'Medium',
+            'evidence': 'Extensive analysis with multiple supporting experiments.' * 3,
+            'concession': '',
+            'sub_critiques': [],
+        },
+    }
+
+    other_critiques = [
+        {
+            'agent_style': 'Peer-High',
+            'critique_tree': {
+                'id': 'peer-high',
+                'confidence': 0.9,
+                'severity': 'High',
+                'evidence': 'Peer high confidence backed by strong data.',
+                'sub_critiques': [],
+            },
+        },
+        {
+            'agent_style': 'Peer-Low',
+            'critique_tree': {
+                'id': 'peer-low',
+                'confidence': 0.2,
+                'severity': 'Low',
+                'evidence': 'Peer low confidence citing methodological issues.',
+                'sub_critiques': [],
+            },
+        },
+    ]
+
+    result = agent_instance.self_critique(own_critique, other_critiques, config={})
+
+    assert result['adjustments'] == []

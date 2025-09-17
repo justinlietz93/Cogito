@@ -79,8 +79,6 @@ def test_peer_review_latex_generation(tmp_path):
 
     assert tex_path, "Expected formatter to produce a tex path"
     tex_file = Path(tex_path)
-    assert tex_file.exists() and tex_file.is_file()
+    assert tex_file.is_file()
 
-    if pdf_path:
-        pdf_file = Path(pdf_path)
-        assert pdf_file.exists() and pdf_file.is_file()
+    assert pdf_path is None or Path(pdf_path).is_file()

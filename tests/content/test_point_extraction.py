@@ -15,11 +15,32 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.content_assessor import ContentAssessor
 
-from tests.providers.fixtures.openai_responses import (
-    INCOMPLETE_JSON_RESPONSE,
-    SUCCESSFUL_RESPONSE,
-    TEXT_RESPONSE,
-)
+SUCCESSFUL_RESPONSE = {
+    "points": [
+        {"id": "point-1", "point": "First test point"},
+        {"id": "point-2", "point": "Second test point"},
+    ]
+}
+
+INCOMPLETE_JSON_RESPONSE = """
+{
+  "points": [
+    {
+      "id": "point-1",
+      "point": "First point"
+    },
+    {
+      "id": "point-2",
+      "point": "Second point"
+    }
+"""
+
+TEXT_RESPONSE = """
+Here are some points:
+1. First point from text
+2. Second point from text
+3. Third point from text
+"""
 
 
 @pytest.fixture

@@ -150,3 +150,54 @@ def test_enhance_requires_documents() -> None:
     with pytest.raises(ProjectDocumentsNotFound):
         service.enhance()
 
+
+def test_order_documents_skips_empty_and_unknown_entries() -> None:
+    service = ResearchEnhancementService(
+        reference_service=_StubReferenceService([]),
+        project_repository=_StubRepository([]),
+        content_generator=_StubGenerator([]),
+    )
+
+    documents = [
+        ProjectDocument(name="UNLISTED_NOTE.md", content="Observations."),
+        ProjectDocument(name="CONTEXT_CONSTRAINTS.md", content="   "),
+        ProjectDocument(name="CONTEXT_CONSTRAINTS.md", content="Key constraints content."),
+        ProjectDocument(name="IMPLEMENTATION_PATH.md", content="Implementation plan."),
+        ProjectDocument(name="BREAKTHROUGH_BLUEPRINT.md", content=""),
+    ]
+
+    ordered = service._order_documents(documents)
+    assert [doc.name for doc in ordered] == [
+        "CONTEXT_CONSTRAINTS.md",
+        "IMPLEMENTATION_PATH.md",
+        "UNLISTED_NOTE.md",
+    ]
+
+
+def test_extract_key_concepts_handles_duplicates_and_formatting() -> None:
+    service = ResearchEnhancementService(
+        reference_service=_StubReferenceService([]),
+        project_repository=_StubRepository([]),
+        content_generator=_StubGenerator([]),
+        max_concepts=5,
+    )
+
+    complex_content = (
+        "# Plasma Containment Strategy\n"
+        "## Duplicate Name\n"
+        "- Maintain magnetic field\n"
+        "- Maintain magnetic field\n"
+        "* Advanced Containment\n"
+        "__Quantum Loop Stabilization__\n"
+        "We advance the Stellar Fusion Initiative with Multi-Beam Focusing arrays."
+    )
+
+    concepts = service._extract_key_concepts(complex_content, max_concepts=5)
+    assert concepts == [
+        "Plasma Containment Strategy",
+        "Duplicate Name",
+        "Maintain magnetic field",
+        "Advanced Containment",
+        "Quantum Loop Stabilization",
+    ]
+

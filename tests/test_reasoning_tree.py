@@ -5,6 +5,7 @@
 import os
 import sys
 from typing import Dict
+from unittest.mock import patch
 
 import pytest
 
@@ -95,3 +96,22 @@ def test_node_contains_expected_fields(base_config):
     assert result is not None
     for field_name in {"id", "claim", "evidence", "confidence", "severity", "recommendation", "concession", "sub_critiques"}:
         assert field_name in result
+
+
+def test_node_missing_expected_fields_logs_warning(base_config, caplog):
+    """Gracefully handle provider responses that omit expected fields."""
+
+    def _partial_response(prompt_template, context, config, is_structured=False):
+        return ({"claim": "Incomplete"}, "stub-model")
+
+    with caplog.at_level("WARNING", logger="src.reasoning_tree"):
+        with patch("src.reasoning_tree.call_with_retry", _partial_response):
+            result = execute_reasoning_tree(
+                "Insufficient structured response." * 5,
+                STYLE_DIRECTIVES,
+                "TestAgent",
+                base_config,
+            )
+
+    assert result is None
+    assert any("Unexpected assessment structure" in message for message in caplog.messages)

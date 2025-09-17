@@ -121,3 +121,57 @@ def test_build_thesis_runs_agents_and_persists_outputs(sample_papers):
     assert len(generator.calls) == 2
     assert generator.calls[0][0] == "system explorer"
     assert generator.calls[1][0] == "system synth"
+
+
+def test_build_thesis_handles_reference_service_without_results():
+    reference = StubReferenceService([[]])
+    generator = StubGenerator()
+    repository = RecordingRepository()
+    clock = FixedClock()
+    profiles = [
+        AgentProfile(name="Explorer", role="Explores", system_prompt="system explorer"),
+        AgentProfile(name="SynthesisArbitrator", role="Synthesises", system_prompt="system synth"),
+    ]
+
+    service = ThesisBuilderService(
+        reference_service=reference,
+        output_repository=repository,
+        content_generator=generator,
+        clock=clock,
+        agent_profiles=profiles,
+    )
+
+    result = service.build_thesis("Novelty Analysis", max_papers=2)
+
+    assert result.papers == []
+    assert repository.papers_calls[0][1] == []
+    assert result.thesis == "response-for-synth"
+    assert any(call[0] == "20240101_120000" for call in repository.report_calls)
+
+
+def test_build_thesis_propagates_generator_errors(sample_papers):
+    reference = StubReferenceService(sample_papers)
+
+    class FailingGenerator(StubGenerator):
+        def generate(self, *, system_prompt: str, user_prompt: str, max_tokens: int) -> str:
+            raise RuntimeError("generation failed")
+
+    generator = FailingGenerator()
+    repository = RecordingRepository()
+    clock = FixedClock()
+    profiles = [
+        AgentProfile(name="Explorer", role="Explores", system_prompt="system explorer"),
+        AgentProfile(name="SynthesisArbitrator", role="Synthesises", system_prompt="system synth"),
+    ]
+
+    service = ThesisBuilderService(
+        reference_service=reference,
+        output_repository=repository,
+        content_generator=generator,
+        clock=clock,
+        agent_profiles=profiles,
+    )
+
+    with pytest.raises(RuntimeError, match="generation failed"):
+        service.build_thesis("Quantum Flux Resonator", max_papers=2)
+    assert repository.agent_calls == []
