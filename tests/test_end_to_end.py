@@ -29,9 +29,9 @@ def test_e2e_critique_execution():
         # Basic Assertions for format and execution
         assert isinstance(result, str)
         assert len(result) > 0
-        assert "=== CRITIQUE ASSESSMENT REPORT ===" in result
-        assert "=== END OF REPORT ===" in result
-        assert "OVERALL ASSESSMENT:" in result or "NO SIGNIFICANT POINTS" in result
+        assert "# Critique Assessment Report" in result
+        assert "## Overall Judge Summary" in result
+        assert "## Detailed Agent Critiques" in result or "No critique data available." in result
         # Cannot reliably assert specific critique content due to placeholder logic
 
         print("E2E test completed successfully (basic format check).")

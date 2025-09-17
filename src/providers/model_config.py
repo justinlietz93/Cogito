@@ -74,11 +74,15 @@ def get_openai_config() -> Dict[str, Any]:
         Dictionary containing OpenAI configuration settings
     """
     api_config = get_api_config()
-    openai_config = api_config.get('openai', {})
-    
-    # Set defaults if not specified
-    if 'model' not in openai_config:
-        openai_config['model'] = 'o3-mini'
+    openai_config = dict(api_config.get('openai', {}))
+
+    # Allow environment variables to override or supply defaults so deployments
+    # can select any available model without editing source templates.
+    env_model = os.getenv('OPENAI_MODEL') or os.getenv('OPENAI_DEFAULT_MODEL')
+    if env_model:
+        openai_config.setdefault('model', env_model)
+    else:
+        openai_config.setdefault('model', 'gpt-4o-mini')
     if 'max_tokens' not in openai_config:
         openai_config['max_tokens'] = 8192
     if 'temperature' not in openai_config:

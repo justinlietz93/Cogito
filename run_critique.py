@@ -1,266 +1,197 @@
-# run_critique.py
-# import asyncio # No longer needed
-import os
-import logging
+"""Command line entry point for the Cogito critique pipelines."""
+
+from __future__ import annotations
+
+import argparse
 import json
-import datetime
-import argparse # Added argparse
+import logging
+import os
+import sys
+from pathlib import Path
+from typing import Any, Dict
+
 from dotenv import load_dotenv
-from src import critique_goal_document # Now synchronous
-from src.scientific_review_formatter import format_scientific_peer_review
-from src.latex.cli import add_latex_arguments, handle_latex_output
 
-# Function to load configuration from JSON file
-def load_config(path="config.json"):
-    try:
-        with open(path, 'r') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        print(f"Error: Configuration file '{path}' not found.")
-        return None
-    except json.JSONDecodeError:
-        print(f"Error: Configuration file '{path}' contains invalid JSON.")
-        return None
+from src.application.critique.configuration import ModuleConfigBuilder
+from src.application.critique.services import CritiqueRunner
+from src.application.user_settings.services import SettingsPersistenceError, UserSettingsService
+from src.domain.user_settings.models import UserSettings
+from src.infrastructure.critique.gateway import ModuleCritiqueGateway
+from src.infrastructure.user_settings.file_repository import JsonFileSettingsRepository
+from src.latex.cli import add_latex_arguments
+from src.presentation.cli.app import CliApp
 
-# --- Configure Logging ---
-def setup_logging():
-    log_dir = "logs"
-    os.makedirs(log_dir, exist_ok=True)
-    system_log_file = os.path.join(log_dir, "system.log")
-    logging.basicConfig(level=logging.INFO,
-                        format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
-                        filename=system_log_file,
-                        filemode='w',
-                        encoding='utf-8')
-    logging.info("Root logging configured. System logs in logs/system.log")
-# -------------------------
 
-# Make main synchronous
-def main():
-    # --- Argument Parsing ---
-    parser = argparse.ArgumentParser(description="Run the Critique Council on a given input file.")
-    parser.add_argument("input_file", help="Path to the input content file (e.g., content.txt).")
-    parser.add_argument("--PR", "--peer-review", action="store_true",
-                        help="Enable Peer Review mode, enhancing personas with SME perspective.")
-    parser.add_argument("--scientific", action="store_true",
-                        help="Use scientific methodology agents instead of philosophical agents.")
-    # Add LaTeX-related arguments
+class ConfigLoadError(Exception):
+    """Raised when the configuration file cannot be loaded."""
+
+
+def setup_logging() -> None:
+    logs_dir = Path("logs")
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    system_log = logs_dir / "system.log"
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        filename=system_log,
+        filemode="w",
+        encoding="utf-8",
+    )
+    logging.getLogger(__name__).info("Logging configured. Writing to %s", system_log)
+
+
+def build_argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Run the Cogito critique council from the command line.",
+    )
+    parser.add_argument("input_file", nargs="?", help="Path to the document to critique.")
+    parser.add_argument(
+        "--peer-review",
+        "--PR",
+        dest="peer_review",
+        action="store_true",
+        help="Enable peer review enhancements.",
+    )
+    parser.add_argument(
+        "--no-peer-review",
+        dest="peer_review",
+        action="store_false",
+        help="Disable peer review enhancements for this run.",
+    )
+    parser.add_argument(
+        "--scientific",
+        dest="scientific_mode",
+        action="store_true",
+        help="Use scientific methodology agents.",
+    )
+    parser.add_argument(
+        "--no-scientific",
+        dest="scientific_mode",
+        action="store_false",
+        help="Disable scientific methodology for this run.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        dest="output_dir",
+        help="Directory where critique reports should be stored.",
+    )
+    parser.add_argument(
+        "--remember-output",
+        action="store_true",
+        help="Persist the provided output directory as the default.",
+    )
+    parser.add_argument(
+        "--config",
+        dest="config",
+        help="Path to the configuration JSON file to load.",
+    )
+    interactive_group = parser.add_mutually_exclusive_group()
+    interactive_group.add_argument(
+        "--interactive",
+        dest="interactive_mode",
+        action="store_true",
+        help="Force the interactive navigation experience.",
+    )
+    interactive_group.add_argument(
+        "--no-interactive",
+        dest="interactive_mode",
+        action="store_false",
+        help="Run without interactive prompts.",
+    )
+    parser.set_defaults(
+        peer_review=None,
+        scientific_mode=None,
+        interactive_mode=None,
+    )
     parser = add_latex_arguments(parser)
+    return parser
+
+
+def load_config(path: Path) -> Dict[str, Any]:
+    logger = logging.getLogger(__name__)
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except FileNotFoundError as exc:
+        logger.error("Configuration file '%s' was not found.", path)
+        raise ConfigLoadError(f"Configuration file '{path}' does not exist.") from exc
+    except json.JSONDecodeError:
+        raise
+    except OSError as exc:
+        logger.error("Failed to read configuration '%s': %s", path, exc)
+        raise ConfigLoadError(
+            f"Configuration file '{path}' could not be read: {exc}"
+        ) from exc
+
+
+def determine_config_path(args: argparse.Namespace, settings_service: UserSettingsService) -> Path:
+    if getattr(args, "config", None):
+        return Path(args.config).expanduser()
+
+    stored = settings_service.get_settings().config_path
+    if stored:
+        return Path(stored)
+
+    return Path("config.json")
+
+
+class _EphemeralSettingsRepository:
+    """In-memory fallback repository used when persisted settings cannot be loaded."""
+
+    def __init__(self) -> None:
+        self._settings = UserSettings()
+
+    def load(self) -> UserSettings:
+        return self._settings
+
+    def save(self, settings: UserSettings) -> None:
+        self._settings = settings
+
+
+def should_run_interactive(args: argparse.Namespace) -> bool:
+    interactive_mode = getattr(args, "interactive_mode", None)
+    if interactive_mode is True:
+        return True
+    if interactive_mode is False:
+        return False
+    return getattr(args, "input_file", None) is None
+
+
+def main() -> None:
+    parser = build_argument_parser()
     args = parser.parse_args()
-    # -------------------------
 
     setup_logging()
-    root_logger = logging.getLogger(__name__)
-
-    # --- Load Configuration ---
-    app_config = load_config()
-    if app_config is None:
-        root_logger.error("Exiting due to configuration file error.")
-        return
-
+    logger = logging.getLogger(__name__)
     load_dotenv()
-    root_logger.info("Environment variables loaded from .env (if found).")
-    # -------------------------
 
-    # --- Prepare Module Config ---
-    # Structure the configuration to include all available providers
-    module_config = {
-        'api': {
-            'providers': {},  # Provider configuration container
-            'primary_provider': app_config.get('api', {}).get('primary_provider', 'gemini'),
-        },
-        'reasoning_tree': app_config.get('reasoning_tree', {}),
-        'council_orchestrator': app_config.get('council_orchestrator', {})
-    }
-    
-    # Add Gemini configuration if available
-    if 'gemini' in app_config.get('api', {}):
-        module_config['api']['providers']['gemini'] = {
-            **app_config.get('api', {}).get('gemini', {}),
-            'resolved_key': os.getenv('GEMINI_API_KEY'),
-        }
-        # Also add at top level for backward compatibility with older provider modules
-        module_config['api']['gemini'] = module_config['api']['providers']['gemini']
-        
-    # Add DeepSeek configuration if available
-    if 'deepseek' in app_config.get('api', {}) or os.getenv('DEEPSEEK_API_KEY'):
-        module_config['api']['providers']['deepseek'] = {
-            **app_config.get('api', {}).get('deepseek', {}),
-            'api_key': os.getenv('DEEPSEEK_API_KEY'),
-        }
-        # Also add at top level for backward compatibility with older provider modules
-        module_config['api']['deepseek'] = module_config['api']['providers']['deepseek']
-        
-    # Add OpenAI configuration if available
-    if 'openai' in app_config.get('api', {}) or os.getenv('OPENAI_API_KEY'):
-        module_config['api']['providers']['openai'] = {
-            **app_config.get('api', {}).get('openai', {}),
-            'resolved_key': os.getenv('OPENAI_API_KEY'),
-        }
-        # Also add at top level for backward compatibility with older provider modules
-        module_config['api']['openai'] = module_config['api']['providers']['openai']
-    
-    # For backward compatibility with older components
-    primary_provider = module_config['api']['primary_provider']
-    if primary_provider in module_config['api']['providers'] and 'resolved_key' in module_config['api']['providers'][primary_provider]:
-        module_config['api']['resolved_key'] = module_config['api']['providers'][primary_provider]['resolved_key']
-    
-    root_logger.info("Module configuration prepared.")
-    # -------------------------
-
-    # --- Validate Primary Provider API Key ---
-    primary_provider = module_config['api']['primary_provider']
-    # Check both locations (providers nested and direct)
-    api_key_missing = (
-        (primary_provider not in module_config['api']['providers'] or 
-         not module_config['api']['providers'][primary_provider].get('resolved_key', module_config['api']['providers'][primary_provider].get('api_key')))
-        and
-        (primary_provider not in module_config['api'] or 
-         not module_config['api'][primary_provider].get('resolved_key', module_config['api'][primary_provider].get('api_key')))
-    )
-    
-    if api_key_missing:
-        error_msg = f"Primary provider '{primary_provider}' API key not found in .env file or environment. Cannot proceed."
-        print(f"Error: {error_msg}")
-        root_logger.error(error_msg)
-        return
-    # -------------------------
-
-    # Use parsed arguments
-    input_file = args.input_file
-    peer_review_mode = args.PR # or args.peer_review
-
-    scientific_mode = args.scientific
-    
-    root_logger.info(f"Initiating critique for: {input_file} (Peer Review Mode: {peer_review_mode}, Scientific Mode: {scientific_mode})")
+    repository = JsonFileSettingsRepository()
     try:
-        # Pass peer_review_mode and scientific_mode to the critique function
-        final_critique_report = critique_goal_document(
-            input_file, 
-            module_config, 
-            peer_review=peer_review_mode,
-            scientific_mode=scientific_mode
-        )
+        settings_service = UserSettingsService(repository)
+    except SettingsPersistenceError as exc:
+        logger.error("Failed to load persisted settings: %s", exc)
+        print("Warning: could not load saved settings. Using in-memory defaults for this session.")
+        settings_service = UserSettingsService(_EphemeralSettingsRepository())
 
-        # Save standard critique report
-        output_dir = "critiques"
-        os.makedirs(output_dir, exist_ok=True)
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        input_basename = os.path.splitext(os.path.basename(input_file))[0]
-        output_filename = os.path.join(output_dir, f"{input_basename}_critique_{timestamp}.md")
+    config_path = determine_config_path(args, settings_service)
+    try:
+        base_config = load_config(config_path)
+    except json.JSONDecodeError as exc:
+        logger.error("Configuration file '%s' is not valid JSON: %s", config_path, exc)
+        print(f"Error: configuration file '{config_path}' contains invalid JSON: {exc}")
+        sys.exit(1)
+    except ConfigLoadError as exc:
+        logger.error("%s", exc)
+        print(f"Error: {exc}")
+        sys.exit(1)
 
-        with open(output_filename, 'w', encoding='utf-8') as f:
-            f.write(final_critique_report)
-            
-        success_msg = f"Critique report successfully saved to {output_filename}"
-        root_logger.info(success_msg)
-        print(f"\n{success_msg}")
-        
-        # If peer review mode is active, generate formal scientific peer review
-        if peer_review_mode:
-            root_logger.info(f"Peer Review mode active - Generating scientific peer review format... (Scientific Mode: {scientific_mode})")
-            try:
-                # Read the original content
-                with open(input_file, 'r', encoding='utf-8') as f:
-                    original_content = f.read()
-                
-                # Generate the scientific peer review
-                scientific_review = format_scientific_peer_review(
-                    original_content=original_content,
-                    critique_report=final_critique_report,
-                    config=module_config,
-                    scientific_mode=scientific_mode
-                )
-                
-                # Save the scientific peer review to a separate file
-                pr_output_filename = os.path.join(output_dir, f"{input_basename}_peer_review_{timestamp}.md")
-                with open(pr_output_filename, 'w', encoding='utf-8') as f:
-                    f.write(scientific_review)
-                
-                pr_success_msg = f"Scientific Peer Review successfully saved to {pr_output_filename}"
-                root_logger.info(pr_success_msg)
-                print(f"\n{pr_success_msg}")
-                
-                # Generate LaTeX document if requested
-                if args.latex:
-                    try:
-                        # Read the original content again to be safe
-                        with open(input_file, 'r', encoding='utf-8') as f:
-                            original_content = f.read()
-                            
-                        # Generate the LaTeX document
-                        latex_success, tex_path, pdf_path = handle_latex_output(
-                            args, 
-                            original_content,
-                            final_critique_report,
-                            scientific_review,
-                            scientific_mode  # Pass the scientific mode flag
-                        )
-                        
-                        if latex_success:
-                            if tex_path:
-                                latex_success_msg = f"LaTeX document successfully saved to {tex_path}"
-                                root_logger.info(latex_success_msg)
-                                print(f"\n{latex_success_msg}")
-                            if pdf_path:
-                                pdf_success_msg = f"PDF document successfully saved to {pdf_path}"
-                                root_logger.info(pdf_success_msg)
-                                print(f"\n{pdf_success_msg}")
-                        else:
-                            latex_error_msg = "Failed to generate LaTeX document"
-                            root_logger.error(latex_error_msg)
-                            print(f"\nWarning: {latex_error_msg}")
-                    except Exception as e:
-                        latex_error_msg = f"Error generating LaTeX document: {e}"
-                        root_logger.error(latex_error_msg, exc_info=True)
-                        print(f"\nWarning: {latex_error_msg}")
-                
-            except Exception as e:
-                pr_error_msg = f"Error generating scientific peer review: {e}"
-                root_logger.error(pr_error_msg, exc_info=True)
-                print(f"\nWarning: {pr_error_msg}")
-                
-        # If LaTeX is requested but peer review is not, generate LaTeX with just the critique
-        elif args.latex:
-            try:
-                # Read the original content
-                with open(input_file, 'r', encoding='utf-8') as f:
-                    original_content = f.read()
-                    
-                # Generate the LaTeX document without peer review
-                latex_success, tex_path, pdf_path = handle_latex_output(
-                    args, 
-                    original_content,
-                    final_critique_report,
-                    scientific_mode=scientific_mode  # Pass the scientific mode flag
-                )
-                
-                if latex_success:
-                    if tex_path:
-                        latex_success_msg = f"LaTeX document successfully saved to {tex_path}"
-                        root_logger.info(latex_success_msg)
-                        print(f"\n{latex_success_msg}")
-                    if pdf_path:
-                        pdf_success_msg = f"PDF document successfully saved to {pdf_path}"
-                        root_logger.info(pdf_success_msg)
-                        print(f"\n{pdf_success_msg}")
-                else:
-                    latex_error_msg = "Failed to generate LaTeX document"
-                    root_logger.error(latex_error_msg)
-                    print(f"\nWarning: {latex_error_msg}")
-            except Exception as e:
-                latex_error_msg = f"Error generating LaTeX document: {e}"
-                root_logger.error(latex_error_msg, exc_info=True)
-                print(f"\nWarning: {latex_error_msg}")
+    config_builder = ModuleConfigBuilder(base_config, settings_service, os.getenv)
+    critique_runner = CritiqueRunner(settings_service, config_builder, ModuleCritiqueGateway())
+    cli_app = CliApp(settings_service, critique_runner)
 
-    except FileNotFoundError as e:
-        error_msg = f"Input file not found at {input_file}"
-        print(f"Error: {error_msg}")
-        root_logger.error(error_msg, exc_info=True)
-    except Exception as e:
-        error_msg = f"An unexpected error occurred during critique: {e}"
-        print(f"Error: {error_msg}")
-        root_logger.error(error_msg, exc_info=True)
+    interactive = should_run_interactive(args)
+    cli_app.run(args, interactive=interactive)
+
 
 if __name__ == "__main__":
-    main() # Call main directly
+    main()

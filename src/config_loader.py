@@ -7,7 +7,7 @@ from the centralized YAML configuration file.
 
 import os
 import yaml
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional
 
 class ConfigLoader:
     """
@@ -17,7 +17,7 @@ class ConfigLoader:
     and provides access to them through a unified interface.
     """
     
-    def __init__(self, config_path: str = None):
+    def __init__(self, config_path: str | None = None, *, eager_load: bool = False):
         """
         Initialize the configuration loader.
         
@@ -26,24 +26,27 @@ class ConfigLoader:
                         defaults to 'config.yaml' in the project root.
         """
         self.config_path = config_path or os.path.join(
-            os.path.dirname(os.path.dirname(__file__)), 
+            os.path.dirname(os.path.dirname(__file__)),
             'config.yaml'
         )
-        self.config = self._load_config()
-        
+        self._config: Optional[Dict[str, Any]] = None
+        if eager_load:
+            self._config = self._load_config()
+
     def _load_config(self) -> Dict[str, Any]:
         """
         Load configuration from the YAML file.
         
         Returns:
-            Dictionary containing the configuration settings.
+            Dictionary containing the configuration settings. Missing configuration
+            files result in an empty dictionary so optional tooling can import the
+            loader without crashing.
             
         Raises:
-            FileNotFoundError: If the configuration file is not found.
             yaml.YAMLError: If the configuration file has invalid YAML syntax.
         """
         if not os.path.exists(self.config_path):
-            raise FileNotFoundError(f"Configuration file not found: {self.config_path}")
+            return {}
             
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
@@ -52,6 +55,19 @@ class ConfigLoader:
         except yaml.YAMLError as e:
             raise yaml.YAMLError(f"Error parsing YAML configuration: {str(e)}")
             
+    def _ensure_loaded(self) -> None:
+        if self._config is None:
+            self._config = self._load_config()
+
+    @property
+    def config(self) -> Dict[str, Any]:
+        self._ensure_loaded()
+        return self._config or {}
+
+    @config.setter
+    def config(self, value: Optional[Dict[str, Any]]) -> None:
+        self._config = value
+
     def get_section(self, section: str) -> Dict[str, Any]:
         """
         Get a specific section from the configuration.

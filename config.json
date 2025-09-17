@@ -14,7 +14,7 @@
       "base_url": "https://api.deepseek.com/v1"
     },
     "openai": {
-      "model": "o3-mini",
+      "model": "gpt-4o-mini",
       "retries": 3,
       "temperature": 0.2,
       "max_tokens": 8192

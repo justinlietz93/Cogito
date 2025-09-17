@@ -85,7 +85,7 @@ def test_get_style_directives_file_not_found(agent_instance):
     agent_instance._directives_cache = None # Clear cache
 
     directives = agent_instance.get_style_directives()
-    assert "ERROR: Prompt file not found" in directives
+    assert "ERROR: Failed to read prompt file" in directives
 
     # Restore original path for other tests
     agent_instance.prompt_filepath = original_path
@@ -94,7 +94,7 @@ def test_get_style_directives_file_not_found(agent_instance):
 def test_critique_method_calls_tree(agent_instance, mock_tree_execution):
     """Tests that the critique method calls execute_reasoning_tree."""
     dummy_content = "Some text to critique."
-    result = agent_instance.critique(dummy_content)
+    result = agent_instance.critique(dummy_content, config={})
 
     # Check that the tree function was called
     mock_tree_execution.assert_called_once()
@@ -112,26 +112,159 @@ def test_critique_method_handles_tree_termination(agent_instance):
     """Tests that critique handles None return from execute_reasoning_tree."""
     # Patch the function in the reasoning_agent module where it's imported
     with patch('src.reasoning_agent.execute_reasoning_tree', return_value=None) as mock_tree:
-        result = agent_instance.critique("Some content")
+        result = agent_instance.critique("Some content", config={})
         mock_tree.assert_called_once()
         assert result['agent_style'] == agent_instance.style
         assert result['critique_tree']['id'] == 'root-terminated'
         assert result['critique_tree']['confidence'] == 0.0
 
-def test_self_critique_method_placeholder(agent_instance):
-    """Tests the placeholder implementation of the self_critique method."""
-    own_critique = {'agent_style': agent_instance.style, 'critique_tree': {'id': 'test-id'}}
-    other_critiques = [{'agent_style': 'Other', 'critique_tree': {'id': 'other-id'}}]
+def test_self_critique_aligns_with_peer_consensus(agent_instance):
+    """Self-critique should nudge confidence toward peer consensus and consider evidence."""
 
-    result = agent_instance.self_critique(own_critique, other_critiques)
+    own_critique = {
+        'agent_style': agent_instance.style,
+        'critique_tree': {
+            'id': 'root-claim',
+            'claim': 'Root finding',
+            'confidence': 0.9,
+            'severity': 'High',
+            'evidence': 'Sparse notes',
+            'concession': '',
+            'sub_critiques': [
+                {
+                    'id': 'child-claim',
+                    'claim': 'Follow-up finding',
+                    'confidence': 0.4,
+                    'severity': 'Medium',
+                    'evidence': 'Extensive supporting evidence that reinforces the critique.' * 3,
+                    'concession': 'none',
+                    'sub_critiques': [],
+                }
+            ],
+        },
+    }
 
-    assert result['agent_style'] == agent_instance.style
-    assert 'adjustments' in result
-    assert isinstance(result['adjustments'], list)
-    # Check placeholder adjustment details (may change if placeholder changes)
-    if own_critique['critique_tree']['id'] != 'root-terminated':
-        assert len(result['adjustments']) == 1
-        assert result['adjustments'][0]['target_claim_id'] == 'test-id'
-        assert result['adjustments'][0]['confidence_delta'] == -0.05
-    else:
-         assert len(result['adjustments']) == 0
+    other_critiques = [
+        {
+            'agent_style': 'PeerA',
+            'critique_tree': {
+                'id': 'peer-a',
+                'confidence': 0.6,
+                'severity': 'Medium',
+                'evidence': 'Peer A supplied detailed evidence supporting a moderate concern.',
+                'sub_critiques': [],
+            },
+        },
+        {
+            'agent_style': 'PeerB',
+            'critique_tree': {
+                'id': 'peer-b',
+                'confidence': 0.55,
+                'severity': 'Low',
+                'evidence': 'Peer B raised lightweight reservations with minimal urgency.',
+                'sub_critiques': [],
+            },
+        },
+    ]
+
+    result = agent_instance.self_critique(own_critique, other_critiques, config={})
+
+    adjustments = {adj['target_claim_id']: adj for adj in result['adjustments']}
+    assert 'root-claim' in adjustments
+    assert 'child-claim' in adjustments
+
+    root_adjustment = adjustments['root-claim']
+    assert root_adjustment['confidence_delta'] == pytest.approx(-0.335, abs=1e-3)
+    reasoning_text = root_adjustment['reasoning'].lower()
+    assert 'peer confidence average' in reasoning_text
+    assert 'lower severity' in reasoning_text
+    assert 'limited supporting evidence' in reasoning_text
+
+    child_adjustment = adjustments['child-claim']
+    assert child_adjustment['confidence_delta'] == pytest.approx(0.084, abs=1e-3)
+    assert 'peer confidence average' in child_adjustment['reasoning'].lower()
+
+
+def test_self_critique_penalizes_concessions(agent_instance):
+    """Concessions should reduce confidence even when peers agree."""
+
+    concession_text = (
+        "We might be overlooking alternative explanations and dataset biases that could undermine this point."
+    )
+    own_critique = {
+        'agent_style': agent_instance.style,
+        'critique_tree': {
+            'id': 'concession-claim',
+            'confidence': 0.7,
+            'severity': 'Medium',
+            'evidence': 'Extensive dataset review and cross validation results support the critique.',
+            'concession': concession_text,
+            'sub_critiques': [],
+        },
+    }
+
+    other_critiques = [
+        {
+            'agent_style': 'Peer',
+            'critique_tree': {
+                'id': 'peer-root',
+                'confidence': 0.7,
+                'severity': 'Medium',
+                'evidence': 'Peer critique reaches the same conclusion with matching confidence.',
+                'sub_critiques': [],
+            },
+        }
+    ]
+
+    result = agent_instance.self_critique(own_critique, other_critiques, config={})
+
+    adjustments = {adj['target_claim_id']: adj for adj in result['adjustments']}
+    assert 'concession-claim' in adjustments
+
+    concession_adjustment = adjustments['concession-claim']
+    assert concession_adjustment['confidence_delta'] == pytest.approx(-0.09, abs=1e-3)
+    assert 'conceded limitations' in concession_adjustment['reasoning'].lower()
+
+
+def test_self_critique_handles_conflicting_peer_evidence(agent_instance):
+    """Conflicting peer feedback should result in moderated adjustments."""
+
+    own_critique = {
+        'agent_style': agent_instance.style,
+        'critique_tree': {
+            'id': 'root-claim',
+            'claim': 'Conflicting finding',
+            'confidence': 0.6,
+            'severity': 'Medium',
+            'evidence': 'Extensive analysis with multiple supporting experiments.' * 3,
+            'concession': '',
+            'sub_critiques': [],
+        },
+    }
+
+    other_critiques = [
+        {
+            'agent_style': 'Peer-High',
+            'critique_tree': {
+                'id': 'peer-high',
+                'confidence': 0.9,
+                'severity': 'High',
+                'evidence': 'Peer high confidence backed by strong data.',
+                'sub_critiques': [],
+            },
+        },
+        {
+            'agent_style': 'Peer-Low',
+            'critique_tree': {
+                'id': 'peer-low',
+                'confidence': 0.2,
+                'severity': 'Low',
+                'evidence': 'Peer low confidence citing methodological issues.',
+                'sub_critiques': [],
+            },
+        },
+    ]
+
+    result = agent_instance.self_critique(own_critique, other_critiques, config={})
+
+    assert result['adjustments'] == []

@@ -30,8 +30,18 @@ def read_file_content(file_path: str) -> str:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
         return content
-    except UnicodeDecodeError as e:
-        raise UnicodeDecodeError(f"Error decoding file {file_path} as UTF-8: {e}")
+    except UnicodeDecodeError as err:
+        encoding = err.encoding or "utf-8"
+        # Reconstruct the UnicodeDecodeError with the original context so callers
+        # receive the expected exception type without triggering constructor
+        # validation errors.
+        raise UnicodeDecodeError(
+            encoding,
+            err.object,
+            err.start,
+            err.end,
+            f"{err.reason} (while decoding {file_path})",
+        ) from err
     except IOError as e:
         # Catching broader IOError after specific decode error
         raise IOError(f"Could not read file {file_path}: {e}")

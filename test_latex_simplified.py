@@ -1,115 +1,84 @@
-#!/usr/bin/env python3
-"""
-Simplified test script to verify the LaTeX generation from peer review files.
+"""Simplified pytest coverage for the LaTeX formatter."""
 
-This script directly tests the LaTeX formatter with minimal dependencies.
-"""
-
-import os
-import sys
 import logging
-import argparse
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Tuple
 
-# Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+import pytest
+
+from src.config_loader import config_loader
+from src.latex.formatter import LatexFormatter
+
 logger = logging.getLogger(__name__)
 
-# Import only necessary LaTeX modules directly
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
-from src.latex.formatter import LatexFormatter
-from src.config_loader import config_loader
+CRITIQUES_DIR = Path("critiques")
+CONTENT_PATH = Path("content.txt")
 
-def test_peer_review_latex_generation():
-    """
-    Test LaTeX generation using peer review files as the source.
-    """
-    logger.info("Testing LaTeX generation from peer review files")
-    
-    # Find the most recent peer review file
-    critiques_dir = Path("critiques")
-    peer_review_files = list(critiques_dir.glob("content_peer_review_*.md"))
-    
-    if not peer_review_files:
-        logger.error("No peer review files found in 'critiques' directory")
-        return False
-    
-    # Sort by modification time to get the most recent
-    peer_review_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-    peer_review_file = peer_review_files[0]
-    
-    # Find the corresponding critique report
-    critique_file_name = peer_review_file.name.replace("peer_review", "critique")
-    critique_file = critiques_dir / critique_file_name
-    
+
+def _locate_peer_review_pair() -> Tuple[Path, Path]:
+    if not CRITIQUES_DIR.exists():
+        pytest.skip("'critiques' directory not available")
+
+    peer_reviews = sorted(
+        CRITIQUES_DIR.glob("content_peer_review_*.md"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    if not peer_reviews:
+        pytest.skip("No peer review files found in 'critiques' directory")
+
+    peer_review_file = peer_reviews[0]
+    critique_file = CRITIQUES_DIR / peer_review_file.name.replace("peer_review", "critique")
     if not critique_file.exists():
-        logger.error(f"Corresponding critique file not found: {critique_file}")
-        return False
-    
-    logger.info(f"Using peer review file: {peer_review_file}")
-    logger.info(f"Using critique file: {critique_file}")
-    
-    # Read content files
-    with open("content.txt", "r", encoding="utf-8") as f:
-        original_content = f.read()
-    
-    with open(critique_file, "r", encoding="utf-8") as f:
-        critique_content = f.read()
-    
-    with open(peer_review_file, "r", encoding="utf-8") as f:
-        peer_review_content = f.read()
-    
-    # Get the base configuration from the YAML file
-    try:
-        yaml_config = config_loader.get_latex_config()
-    except Exception as e:
-        logger.error(f"Failed to load LaTeX config: {e}")
-        # Use a basic config if loading fails
-        yaml_config = {
-            'output_dir': 'latex_output',
-            'compile_pdf': True,
-            'scientific_mode': True,
-            'scientific_objectivity_level': 'high',
-            'output_filename': 'peer_review_report'
-        }
-    
-    # Create the formatter with the configuration
-    formatter = LatexFormatter(yaml_config)
-    
-    # Generate LaTeX
-    try:
-        tex_path, pdf_path = formatter.format_document(
-            original_content,
-            critique_content,
-            peer_review_content
-        )
-        
-        if tex_path:
-            logger.info(f"Successfully generated LaTeX document: {tex_path}")
-            if pdf_path:
-                logger.info(f"Successfully generated PDF document: {pdf_path}")
-            else:
-                logger.warning("PDF generation was skipped or failed")
-            return True
-        else:
-            logger.error("LaTeX generation failed to produce output files")
-            return False
-    except Exception as e:
-        logger.error(f"LaTeX generation failed with error: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+        pytest.skip(f"Corresponding critique file not found: {critique_file}")
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Test LaTeX generation from peer review files')
-    args = parser.parse_args()
-    
-    success = test_peer_review_latex_generation()
-    
-    if success:
-        print("\nSUCCESS: Peer review LaTeX generation test completed successfully")
-        sys.exit(0)
-    else:
-        print("\nFAILURE: Peer review LaTeX generation test failed")
-        sys.exit(1)
+    logger.info("Using peer review file %s", peer_review_file)
+    logger.info("Using critique file %s", critique_file)
+    return peer_review_file, critique_file
+
+
+def _read_text(path: Path) -> str:
+    if not path.exists():
+        pytest.skip(f"Required fixture missing: {path}")
+    return path.read_text(encoding="utf-8")
+
+
+def _build_config(tmp_path: Path) -> Dict[str, object]:
+    try:
+        base_config = config_loader.get_latex_config()
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        logger.warning("Falling back to minimal LaTeX configuration: %s", exc)
+        base_config = {}
+
+    base_config.update(
+        {
+            "output_dir": str(tmp_path / "latex_output"),
+            "compile_pdf": False,
+            "scientific_mode": True,
+            "scientific_objectivity_level": "high",
+            "output_filename": "peer_review_report",
+        }
+    )
+    return base_config
+
+
+@pytest.mark.integration
+def test_peer_review_latex_generation(tmp_path):
+    peer_review_file, critique_file = _locate_peer_review_pair()
+
+    original_content = _read_text(CONTENT_PATH)
+    critique_content = _read_text(critique_file)
+    peer_review_content = _read_text(peer_review_file)
+
+    formatter = LatexFormatter(_build_config(tmp_path))
+    tex_path, pdf_path = formatter.format_document(
+        original_content,
+        critique_content,
+        peer_review_content,
+    )
+
+    assert tex_path, "Expected formatter to produce a tex path"
+    tex_file = Path(tex_path)
+    assert tex_file.is_file()
+
+    assert pdf_path is None or Path(pdf_path).is_file()

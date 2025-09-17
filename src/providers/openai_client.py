@@ -49,8 +49,14 @@ def call_openai_with_retry(
     system_message = kwargs.get('system_message') or openai_config.get('system_message')
     max_tokens = kwargs.get('max_tokens') or openai_config.get('max_tokens')
     
-    # Get model and API key
-    default_model = openai_config.get('model', 'o1')  # Use o1 as default model
+    # Get model and API key. Honour environment overrides so deployments can
+    # select any accessible model without changing source defaults.
+    default_model = (
+        openai_config.get('model')
+        or os.getenv('OPENAI_MODEL')
+        or os.getenv('OPENAI_DEFAULT_MODEL')
+        or 'gpt-4o-mini'
+    )
     api_key = openai_config.get('resolved_key') or os.getenv('OPENAI_API_KEY')
     
     if not api_key:
@@ -79,8 +85,11 @@ def call_openai_with_retry(
         {"role": "user", "content": formatted_prompt}
     ]
     
-    # Determine if we're using an o1 or o3-mini model which requires the responses.create API endpoint
-    is_response_api_model = 'o1' in default_model.lower() or 'o3-mini' in default_model.lower()
+    # Determine if we're using an o-series reasoning model which requires the
+    # responses.create API endpoint.
+    lower_model = str(default_model).lower()
+    normalised_model = lower_model.split("/")[-1]
+    is_response_api_model = normalised_model in {"o1", "o1-mini", "o3", "o3-mini"}
     
     if is_response_api_model:
         # o1 models use the responses.create API with a completely different structure
@@ -270,7 +279,8 @@ def run_openai_client(
         config = get_openai_config()
         
         # Use provided values or get from config
-        model = model_name or config.get('model', 'o3-mini')
+        env_model = os.getenv('OPENAI_MODEL') or os.getenv('OPENAI_DEFAULT_MODEL')
+        model = model_name or config.get('model') or env_model or 'gpt-4o-mini'
         max_tokens_to_use = max_tokens or config.get('max_tokens', 8192)
         temp_to_use = temperature if temperature is not None else config.get('temperature', 0.2)
         
