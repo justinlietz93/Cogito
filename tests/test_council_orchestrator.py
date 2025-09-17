@@ -94,7 +94,14 @@ def test_orchestrator_full_cycle(mock_self_critique, mock_tree, capsys):
     # Check details of synthesized points (using knowledge of mock data)
     for point in result['points']:
         assert 'Claim from' in point['critique']
-        agent_style = point['area'].replace("General (", "").replace(")", "")
+        area = point['area']
+        cohort_label, separator, remainder = area.partition(':')
+        if separator:
+            assert cohort_label.strip() == 'Philosopher'
+            agent_style = remainder.strip()
+        else:
+            assert area == 'Philosopher'
+            agent_style = 'Philosopher'
         expected_confidence = (0.8 if agent_style != 'Skeptic' else 0.6) + (-0.1 if agent_style == 'Skeptic' else -0.05)
         assert point['confidence'] == round(expected_confidence, 2)
         assert point['severity'] == 'Medium'
@@ -127,3 +134,47 @@ def test_orchestrator_no_significant_findings(mock_self_critique, mock_tree, cap
     # Ensure synthesis logic correctly identifies no points to include
     # assert "Included point:" not in captured.out
     assert "No points met the significance threshold" in result['final_assessment']
+
+
+# Patch the tree execution within the reasoning_agent module where it's called
+@patch('src.reasoning_agent.execute_reasoning_tree', side_effect=mock_tree_side_effect)
+@patch('src.reasoning_agent.ReasoningAgent.self_critique', side_effect=mock_self_critique_side_effect, autospec=True)
+def test_orchestrator_scientific_mode_uses_scientific_label(mock_self_critique, mock_tree):
+    """Ensure scientific mode reports scientific analyst areas instead of philosophers."""
+    result = run_critique_council("Scientific content", scientific_mode=True)
+
+    assert mock_tree.call_count == 6
+    assert not result['no_findings']
+    assert result['points'], "Scientific runs should surface significant points in this scenario"
+
+    for point in result['points']:
+        area = point['area']
+        cohort_label, separator, _ = area.partition(':')
+        if separator:
+            assert cohort_label.strip() == 'Scientific Analyst'
+        else:
+            assert area == 'Scientific Analyst'
+
+
+# Patch the tree execution within the reasoning_agent module where it's called
+@patch('src.reasoning_agent.execute_reasoning_tree', side_effect=mock_tree_side_effect)
+@patch('src.reasoning_agent.ReasoningAgent.self_critique', side_effect=mock_self_critique_side_effect, autospec=True)
+def test_orchestrator_respects_agent_area_overrides(mock_self_critique, mock_tree):
+    """Agent-specific area overrides should replace the cohort label when configured."""
+    config = {
+        'council_orchestrator': {
+            'cohort_labels': {'scientific': 'Scientific Analyst'},
+            'agent_area_labels': {
+                'SystemsAnalyst': 'Systems Specialist',
+                'default': 'Council Member {style}',
+            },
+        }
+    }
+
+    result = run_critique_council("Scientific content", config=config, scientific_mode=True)
+
+    areas = {point['area'] for point in result['points']}
+    assert any(area.startswith('Systems Specialist') for area in areas)
+    assert any(area.startswith('Council Member') for area in areas)
+    # Ensure the default cohort label is no longer present in the synthesized areas
+    assert not any(area.startswith('Scientific Analyst:') for area in areas)

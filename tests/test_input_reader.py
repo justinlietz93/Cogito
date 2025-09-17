@@ -14,6 +14,7 @@ TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), 'test_data')
 EXISTING_FILE = os.path.join(TEST_DATA_DIR, 'sample_input.txt')
 NON_EXISTENT_FILE = os.path.join(TEST_DATA_DIR, 'does_not_exist.txt')
 NOT_A_FILE = TEST_DATA_DIR # Directory path
+INVALID_UTF8_FILE = os.path.join(TEST_DATA_DIR, 'invalid_utf8.bin')
 
 # Create dummy test data directory and file before tests run
 @pytest.fixture(scope="module", autouse=True)
@@ -26,6 +27,10 @@ def setup_test_data():
         f.write(sample_content)
     print(f"Created {EXISTING_FILE}")
 
+    with open(INVALID_UTF8_FILE, 'wb') as f:
+        f.write(b"\xff\xfe\xfa\xfa")
+    print(f"Created {INVALID_UTF8_FILE}")
+
     yield # Let tests run
 
     # Teardown: Remove created files/dirs after tests
@@ -33,6 +38,9 @@ def setup_test_data():
     if os.path.exists(EXISTING_FILE):
         os.remove(EXISTING_FILE)
         print(f"Removed {EXISTING_FILE}")
+    if os.path.exists(INVALID_UTF8_FILE):
+        os.remove(INVALID_UTF8_FILE)
+        print(f"Removed {INVALID_UTF8_FILE}")
     if os.path.exists(TEST_DATA_DIR):
         # Only remove if empty, handle potential race conditions if needed
         try:
@@ -61,6 +69,16 @@ def test_read_directory_path():
     """Tests that FileNotFoundError is raised when path is a directory."""
     with pytest.raises(FileNotFoundError, match="Input path is not a file"):
         read_file_content(NOT_A_FILE)
+
+
+def test_read_non_utf8_file():
+    """Tests that UnicodeDecodeError is raised with helpful context."""
+    with pytest.raises(UnicodeDecodeError) as exc_info:
+        read_file_content(INVALID_UTF8_FILE)
+
+    message = str(exc_info.value)
+    assert "while decoding" in message
+    assert INVALID_UTF8_FILE in message
 
 # Note: Testing UnicodeDecodeError requires creating a non-UTF8 file,
 # which can be platform-dependent or tricky. Mocking open() might be

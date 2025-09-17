@@ -7,13 +7,71 @@ critique output into a standard scientific peer review document.
 """
 
 import logging
-import json
-from typing import Dict, Any, Optional
+from collections.abc import Mapping
+from copy import deepcopy
+from typing import Dict, Any, Optional, Tuple
 
 # Import provider factory for LLM clients
-from .providers import call_with_retry
+from .providers import ApiKeyError, ProviderError, call_with_retry
 
 logger = logging.getLogger(__name__)
+
+def _normalise_provider(value: Any) -> str:
+    """Normalise provider identifiers to the canonical keys used by providers."""
+
+    if not value:
+        return "openai"
+
+    name = str(value).strip().lower()
+    if name in {"claude", "claude-3", "claude-3-7-sonnet"}:
+        return "anthropic"
+    if name in {"google", "google-ai"}:
+        return "gemini"
+    return name
+
+
+def _prepare_formatter_config(
+    config: Mapping[str, Any] | None,
+    system_message: str,
+) -> Tuple[Dict[str, Any], str]:
+    """Create a defensive copy of ``config`` with the formatter system message applied."""
+
+    safe_config: Dict[str, Any]
+    if isinstance(config, Mapping):
+        safe_config = deepcopy(dict(config))
+    else:
+        safe_config = {}
+
+    api_section = safe_config.get("api", {})
+    if not isinstance(api_section, Mapping):
+        api_section = {}
+    api_config = dict(api_section)
+
+    provider_key = _normalise_provider(api_config.get("primary_provider"))
+    api_config["primary_provider"] = provider_key
+
+    providers_section = api_config.get("providers", {})
+    if isinstance(providers_section, Mapping):
+        providers_config = dict(providers_section)
+    else:
+        providers_config = {}
+
+    provider_cfg = dict(providers_config.get(provider_key, {}))
+    provider_cfg["system_message"] = system_message
+    providers_config[provider_key] = provider_cfg
+    api_config["providers"] = providers_config
+
+    direct_provider_cfg = api_config.get(provider_key, {})
+    if isinstance(direct_provider_cfg, Mapping):
+        merged_direct_cfg = dict(direct_provider_cfg)
+    else:
+        merged_direct_cfg = {}
+    merged_direct_cfg.update(provider_cfg)
+    api_config[provider_key] = merged_direct_cfg
+
+    safe_config["api"] = api_config
+    return safe_config, provider_key
+
 
 def format_scientific_peer_review(
     original_content: str,
@@ -178,32 +236,11 @@ def format_scientific_peer_review(
     {critique_report}
     """
     
+    provider_key = "openai"
     try:
-        # Create a new config that forces OpenAI to be the provider
-        # This ensures we use OpenAI for this specific formatting task
-        formatter_config = {
-            "api": {
-                **config.get("api", {}),
-                "primary_provider": "openai"  # Force OpenAI for scientific formatting
-            }
-        }
-        
-        # Make sure we have formatting-specific settings for OpenAI
-        if "openai" not in formatter_config["api"]:
-            # If no OpenAI config, try to use nested providers structure
-            if "providers" in formatter_config["api"] and "openai" in formatter_config["api"]["providers"]:
-                formatter_config["api"]["openai"] = formatter_config["api"]["providers"]["openai"]
-                
-        # Attempt to set system message in OpenAI config
-        if "openai" in formatter_config["api"]:
-            formatter_config["api"]["openai"]["system_message"] = system_message
-            
-            # Get max tokens from config if available and set in OpenAI config
-            max_tokens = config.get("api", {}).get("openai", {}).get("max_tokens")
-            if max_tokens:
-                formatter_config["api"]["openai"]["max_tokens"] = max_tokens
-        
-        # Call provider factory with OpenAI set as primary provider
+        formatter_config, provider_key = _prepare_formatter_config(config, system_message)
+
+        # Call provider factory with whichever provider is configured
         review_content, model_used = call_with_retry(
             prompt_template=prompt,
             context={},  # Context is already embedded in the prompt template
@@ -247,6 +284,37 @@ End of Peer Review
         else:
             return review_with_header
         
+    except ApiKeyError as exc:
+        logger.error(
+            "Failed to format scientific peer review due to missing API key for %s: %s",
+            provider_key,
+            exc,
+            exc_info=True,
+        )
+        provider_label = provider_key.capitalize() if provider_key else "configured"
+        return f"""# ERROR: Scientific Peer Review Formatting Failed
+
+The system attempted to format the critique using the configured {provider_label} provider, but no API key was available.
+
+{str(exc)}
+
+The original critique report is still available.
+"""
+    except ProviderError as exc:
+        logger.error(
+            "Failed to format scientific peer review due to provider error for %s: %s",
+            provider_key,
+            exc,
+            exc_info=True,
+        )
+        return f"""# ERROR: Scientific Peer Review Formatting Failed
+
+The configured provider could not process the formatting request:
+
+{str(exc)}
+
+The original critique report is still available.
+"""
     except Exception as e:
         logger.error(f"Failed to format scientific peer review: {e}", exc_info=True)
         return f"""# ERROR: Scientific Peer Review Formatting Failed

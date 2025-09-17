@@ -92,17 +92,48 @@ class DirectLatexGenerator:
         Returns:
             The string with special characters escaped.
         """
-        # Apply specific replacements first
+        # Apply specific replacements first. Some replacements intentionally
+        # inject LaTeX fragments (for example ``$\\approx$``) that must not be
+        # escaped again when we later walk through ``LATEX_SPECIAL_CHARS``. To
+        # keep those fragments intact we temporarily swap them for placeholders
+        # that survive the escaping pass and then restore the originals.
+        placeholders: Dict[str, str] = {}
+        placeholder_prefix = "\uF000"
+        placeholder_suffix = "\uF001"
+        placeholder_index = 0
+
+        def _store_placeholder(value: str) -> str:
+            nonlocal placeholder_index, placeholders
+            placeholder = f"{placeholder_prefix}{placeholder_index}{placeholder_suffix}"
+            placeholder_index += 1
+            placeholders[placeholder] = value
+            return placeholder
+
         for old, new in self.CHARACTER_REPLACEMENTS:
-            text = text.replace(old, new)
-        # Apply standard LaTeX escapes
-        for char, escaped in self.LATEX_SPECIAL_CHARS.items():
-            # Avoid double-escaping backslashes if they are part of commands
-            if char == '\\':
-                 # Use negative lookbehind to avoid escaping already escaped chars or commands
-                 text = re.sub(r'(?<!\\)\\{1}(?![a-zA-Z@])', escaped, text)
+            if any(marker in new for marker in ("\\", "$")):
+                text = text.replace(old, _store_placeholder(new))
             else:
-                text = text.replace(char, escaped)
+                text = text.replace(old, new)
+
+        # Apply standard LaTeX escapes while protecting the generated fragments
+        # with the same placeholder strategy so that newly introduced
+        # backslashes survive the backslash escaping step that runs afterwards.
+        for char, escaped in self.LATEX_SPECIAL_CHARS.items():
+            if char == '\\':
+                continue  # handled separately to avoid double-escaping commands
+            if char in text:
+                if any(marker in escaped for marker in ("\\", "$")):
+                    text = text.replace(char, _store_placeholder(escaped))
+                else:
+                    text = text.replace(char, escaped)
+
+        if '\\' in text:
+            # Avoid double-escaping backslashes if they are part of commands
+            text = re.sub(r'(?<!\\)\\{1}(?![a-zA-Z@])', self.LATEX_SPECIAL_CHARS['\\'], text)
+
+        if placeholders:
+            for placeholder, replacement in placeholders.items():
+                text = text.replace(placeholder, replacement)
         return text
 
     def _process_line(self, line: str) -> str:

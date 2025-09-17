@@ -1,71 +1,96 @@
 # src/critique_module/main.py
 
-"""
-Main entry point for the Reasoning Council Critique Module.
-"""
-from typing import Dict, Any
-import logging # Import logging
+"""Main entry point for the Reasoning Council Critique Module."""
 
-# Component Imports
+from typing import Any, Dict, Mapping, Optional, Union
+import json
+import logging
+
 from .input_reader import read_file_content
-# import asyncio # No longer needed
-from .council_orchestrator import run_critique_council # Now synchronous
+from .pipeline_input import (
+    EmptyPipelineInputError,
+    InvalidPipelineInputError,
+    PipelineInput,
+    ensure_pipeline_input,
+)
+from .council_orchestrator import run_critique_council
 from .output_formatter import format_critique_output
 
 # Make synchronous
 def critique_goal_document(
-    file_path: str, 
-    config: Dict[str, Any], 
+    input_data: Union[str, PipelineInput, Mapping[str, Any]],
+    config: Optional[Dict[str, Any]] = None,
     peer_review: bool = False,
-    scientific_mode: bool = False
+    scientific_mode: bool = False,
 ) -> str:
-    """
-    Reads content, runs critique sequentially, returns formatted assessment.
-    
+    """Run the critique pipeline using the supplied input.
+
     Args:
-        file_path: Path to the content file to analyze
-        config: Configuration dictionary
-        peer_review: Whether to enable peer review mode with SME personas
-        scientific_mode: Whether to use scientific methodology agents instead of philosophers
-        
+        input_data: Source data for the critique. Strings are interpreted as file
+            paths when they exist and otherwise treated as literal text for
+            convenience. Mappings must include a ``content`` or ``text`` key.
+        config: Configuration dictionary. Optional for convenience during testing.
+        peer_review: Enables peer review enhancements when ``True``.
+        scientific_mode: Switches the council to scientific methodology agents.
+
     Returns:
-        Formatted critique output as a string
+        Formatted critique output as a Markdown string.
     """
-    logger = logging.getLogger(__name__) # Get logger
+
+    logger = logging.getLogger(__name__)
+    resolved_config: Dict[str, Any] = dict(config or {})
 
     try:
-        logger.debug("Step 1: Reading input...")
-        content = read_file_content(file_path)
-        logger.debug("Input read successfully.")
-
-        logger.debug(f"Step 2: Running critique council... (Peer Review: {peer_review}, Scientific Mode: {scientific_mode})")
-        # Call synchronous council function with all parameters
-        critique_data = run_critique_council(
-            content, 
-            config, 
-            peer_review=peer_review,
-            scientific_mode=scientific_mode
+        logger.debug("Normalising pipeline input...")
+        pipeline_input = ensure_pipeline_input(
+            input_data,
+            read_file=read_file_content,
+            assume_path=True,
+            fallback_to_content=True,
         )
-        logger.debug("Council finished.")
+        logger.debug(
+            "Pipeline input ready (source=%s, chars=%d)",
+            pipeline_input.source or pipeline_input.metadata.get("source_path", "<direct>"),
+            len(pipeline_input.content),
+        )
 
-        logger.debug(f"Step 3: Formatting output... (Peer Review: {peer_review})")
-        # Pass original content, config, and peer_review flag needed for Judge summary
-        formatted_output = format_critique_output(critique_data, content, config, peer_review=peer_review)
-        logger.debug("Output formatted.")
+        logger.debug(
+            "Running critique council (peer_review=%s, scientific_mode=%s)",
+            peer_review,
+            scientific_mode,
+        )
+        critique_data = run_critique_council(
+            pipeline_input,
+            config=resolved_config,
+            peer_review=peer_review,
+            scientific_mode=scientific_mode,
+        )
 
+        logger.debug("Formatting critique output...")
+        formatted_output = format_critique_output(
+            critique_data,
+            pipeline_input.content,
+            resolved_config,
+            peer_review=peer_review,
+        )
         logger.info("Critique process completed successfully.")
         return formatted_output
 
-    except FileNotFoundError as e:
-        logger.error(f"Input file error in main: {e}", exc_info=True)
-        raise e # Re-raise specific exception
-    except IOError as e:
-        logger.error(f"Input file read error in main: {e}", exc_info=True)
-        raise e # Re-raise specific exception
-    except Exception as e:
-        logger.error(f"Unexpected error in critique_goal_document: {e}", exc_info=True)
-        # Re-raise a generic exception for the runner script to catch
-        raise Exception(f"Critique module failed unexpectedly in main: {e}") from e
+    except FileNotFoundError as exc:
+        logger.error("Input file error in main: %s", exc, exc_info=True)
+        raise
+    except IOError as exc:
+        logger.error("Input file read error in main: %s", exc, exc_info=True)
+        raise
+    except EmptyPipelineInputError as exc:
+        logger.error("Received empty input for critique: %s", exc, exc_info=True)
+        raise ValueError("Critique input contains no content.") from exc
+    except InvalidPipelineInputError as exc:
+        logger.error("Invalid critique input: %s", exc, exc_info=True)
+        raise ValueError(f"Invalid critique input: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001 - We intentionally re-wrap unexpected errors.
+        logger.error("Unexpected error in critique_goal_document: %s", exc, exc_info=True)
+        raise Exception(f"Critique module failed unexpectedly: {exc}") from exc
 
 # Keep direct execution block, but make it synchronous
 if __name__ == '__main__':
@@ -85,6 +110,7 @@ if __name__ == '__main__':
         from input_reader import read_file_content as direct_read
         from council_orchestrator import run_critique_council as direct_run_council
         from output_formatter import format_critique_output as direct_format
+        from pipeline_input import PipelineInput as DirectPipelineInput
     except ImportError:
         print("ImportError: Could not import components directly. Ensure PYTHONPATH is set or run from project root.")
         sys.exit(1)
@@ -118,12 +144,12 @@ if __name__ == '__main__':
             print("Input read successfully (direct).")
 
             print("Step 2: Running critique council (direct)...")
-            # Call sync function
-            critique_data = direct_run_council(content, test_config) # No await
+            pipeline_input = DirectPipelineInput(content=content, source=file_path)
+            critique_data = direct_run_council(pipeline_input, config=test_config)
             print("Council finished (direct).")
 
             print("Step 3: Formatting output (direct)...")
-            formatted_output = direct_format(critique_data)
+            formatted_output = direct_format(critique_data, pipeline_input.content, test_config, peer_review=False)
             print("Output formatted (direct).")
 
             print("Direct critique test process completed.")

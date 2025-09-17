@@ -5,11 +5,18 @@ This module contains tests for the ContentAssessor class and its methods
 for extracting points from content.
 """
 
-import unittest
 import json
-from unittest.mock import patch, MagicMock
-import pytest
 import logging
+import sys
+import unittest
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+
+import pytest
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.content_assessor import ContentAssessor
 from src.providers.exceptions import JsonParsingError, ApiResponseError, MaxRetriesExceededError

@@ -17,6 +17,11 @@ import argparse
 from typing import Dict, List, Any
 from datetime import datetime
 
+if "pytest" in sys.modules:
+    import pytest
+
+    pytest.importorskip("agno", reason="Agno optional dependency is not installed.")
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,

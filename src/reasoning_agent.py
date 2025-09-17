@@ -15,6 +15,7 @@ from typing import Dict, List, Any, Optional, Union
 from .reasoning_tree import execute_reasoning_tree # Now synchronous
 # Import provider factory for LLM clients
 from .providers import call_with_retry
+from .reasoning_agent_self_critique import build_self_critique_adjustments
 
 # Define the base path for prompts relative to this file's location
 PROMPT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'prompts'))
@@ -148,30 +149,23 @@ class ReasoningAgent(ABC):
         }
 
     # Synchronous
-    def self_critique(self, own_critique: Dict[str, Any], other_critiques: List[Dict[str, Any]], config: Dict[str, Any], agent_logger: Optional[logging.Logger] = None) -> Dict[str, Any]:
-        """
-        Performs self-critique synchronously (placeholder). Unused in Arbiter flow.
-        """
-        current_logger = agent_logger or self.logger
-        current_logger.info(f"Starting self-critique (Placeholder - Currently Unused)...")
-        adjustments = []
-        own_tree_id = own_critique.get('critique_tree', {}).get('id', 'N/A')
-        if own_tree_id != 'root-terminated' and own_tree_id != 'N/A':
-            current_logger.info(f"Applying placeholder self-critique adjustment to claim ID: {own_tree_id}")
-            adjustments.append(
-                {
-                    'target_claim_id': own_tree_id,
-                    'confidence_delta': -0.05,
-                    'reasoning': f'Placeholder self-critique adjustment by {self.style}.'
-                }
-            )
-        else:
-             current_logger.info("Skipping self-critique adjustment (invalid/terminated initial critique).")
+    def self_critique(
+        self,
+        own_critique: Dict[str, Any],
+        other_critiques: List[Dict[str, Any]],
+        config: Optional[Dict[str, Any]] = None,
+        agent_logger: Optional[logging.Logger] = None,
+    ) -> Dict[str, Any]:
+        """Compare this agent's critique with its peers and propose confidence adjustments."""
 
-        current_logger.info(f"Finished self-critique (Placeholder - Currently Unused).")
+        current_logger = agent_logger or self.logger
+        current_logger.info("Starting self-critique analysis...")
+
+        adjustments = build_self_critique_adjustments(own_critique, other_critiques, config, current_logger)
+        current_logger.info("Finished self-critique with %d adjustment(s).", len(adjustments))
         return {
             'agent_style': self.style,
-            'adjustments': adjustments
+            'adjustments': adjustments,
         }
 
 # --- Concrete Agent Base Classes ---
