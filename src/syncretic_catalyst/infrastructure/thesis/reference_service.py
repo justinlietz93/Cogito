@@ -33,17 +33,19 @@ class ArxivReferenceService:
     def _to_paper(payload: dict) -> ResearchPaper:
         identifier = payload.get("id") or payload.get("identifier")
         title = payload.get("title") or "Unknown Title"
-        authors_field = payload.get("authors") or []
+        authors_field = payload.get("authors")
         authors: list[str] = []
-        if isinstance(authors_field, list) and authors_field:
-            if isinstance(authors_field[0], dict):
+        if isinstance(authors_field, list):
+            if authors_field and isinstance(authors_field[0], dict):
                 authors = [
                     str(author.get("name"))
                     for author in authors_field
-                    if author.get("name")
+                    if isinstance(author, dict) and author.get("name")
                 ]
             else:
-                authors = [str(author) for author in authors_field]
+                authors = [str(author) for author in authors_field if author]
+        elif isinstance(authors_field, str) and authors_field.strip():
+            authors = [authors_field.strip()]
         published = payload.get("published")
         summary = payload.get("summary")
         return ResearchPaper(

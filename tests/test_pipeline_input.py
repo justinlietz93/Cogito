@@ -44,6 +44,20 @@ def test_ensure_pipeline_input_reads_file(tmp_path):
     assert pipeline_input.metadata["source_path"] == str(sample_file)
 
 
+def test_ensure_pipeline_input_file_read_error(tmp_path):
+    invalid_file = tmp_path / "does_not_exist.txt"
+
+    def reader(path: str) -> str:
+        raise FileNotFoundError(path)
+
+    with pytest.raises(FileNotFoundError):
+        ensure_pipeline_input(
+            str(invalid_file),
+            read_file=reader,
+            assume_path=True,
+        )
+
+
 def test_ensure_pipeline_input_from_mapping():
     pipeline_input = ensure_pipeline_input({"content": "body", "source": "api", "priority": "high"})
 

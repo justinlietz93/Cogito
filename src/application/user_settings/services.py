@@ -70,7 +70,7 @@ class UserSettingsService:
         """Persist the preferred LLM provider for critiques."""
 
         normalised = self._normalise_provider_name(provider)
-        if provider and normalised is None:
+        if provider is not None and normalised is None:
             raise InvalidPreferenceError("Provider name cannot be empty.")
 
         self._settings = replace(self._settings, preferred_provider=normalised)

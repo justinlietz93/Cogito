@@ -6,8 +6,9 @@ import argparse
 import json
 import logging
 import os
+import sys
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict
 
 from dotenv import load_dotenv
 
@@ -19,6 +20,10 @@ from src.infrastructure.critique.gateway import ModuleCritiqueGateway
 from src.infrastructure.user_settings.file_repository import JsonFileSettingsRepository
 from src.latex.cli import add_latex_arguments
 from src.presentation.cli.app import CliApp
+
+
+class ConfigLoadError(Exception):
+    """Raised when the configuration file cannot be loaded."""
 
 
 def setup_logging() -> None:
@@ -107,14 +112,16 @@ def load_config(path: Path) -> Dict[str, Any]:
     try:
         with path.open("r", encoding="utf-8") as handle:
             return json.load(handle)
-    except FileNotFoundError:
-        logger.warning("Configuration file '%s' not found. Using defaults.", path)
-        return {}
+    except FileNotFoundError as exc:
+        logger.error("Configuration file '%s' was not found.", path)
+        raise ConfigLoadError(f"Configuration file '{path}' does not exist.") from exc
     except json.JSONDecodeError:
         raise
     except OSError as exc:
         logger.error("Failed to read configuration '%s': %s", path, exc)
-        return {}
+        raise ConfigLoadError(
+            f"Configuration file '{path}' could not be read: {exc}"
+        ) from exc
 
 
 def determine_config_path(args: argparse.Namespace, settings_service: UserSettingsService) -> Path:
@@ -172,7 +179,11 @@ def main() -> None:
     except json.JSONDecodeError as exc:
         logger.error("Configuration file '%s' is not valid JSON: %s", config_path, exc)
         print(f"Error: configuration file '{config_path}' contains invalid JSON: {exc}")
-        return
+        sys.exit(1)
+    except ConfigLoadError as exc:
+        logger.error("%s", exc)
+        print(f"Error: {exc}")
+        sys.exit(1)
 
     config_builder = ModuleConfigBuilder(base_config, settings_service, os.getenv)
     critique_runner = CritiqueRunner(settings_service, config_builder, ModuleCritiqueGateway())

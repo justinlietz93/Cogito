@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -20,6 +21,9 @@ class CritiqueRunResult:
     peer_review_enabled: bool
     scientific_mode_enabled: bool
     module_config: Dict[str, Any]
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class CritiqueRunner:
@@ -62,6 +66,12 @@ class CritiqueRunner:
             candidate = Path(input_source).expanduser()
             if candidate.exists():
                 self._settings_service.record_recent_file(str(candidate))
+            else:
+                preview = input_source if len(input_source) <= 120 else f"{input_source[:117]}..."
+                _LOGGER.debug(
+                    "Received critique input string that is treated as literal content: %r",
+                    preview,
+                )
 
         return CritiqueRunResult(
             critique_report=critique_report,

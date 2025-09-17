@@ -32,9 +32,6 @@ def enhance_research(
 ) -> ResearchEnhancementResult:
     """Run the research enhancement workflow and return the resulting artefacts."""
 
-    if not logging.getLogger().handlers:
-        logging.basicConfig(level=logging.INFO)
-
     base_dir = Path(output_dir)
     orchestrator = AIOrchestrator(model_name=model)
     generator = OrchestratorContentGenerator(orchestrator)
@@ -97,6 +94,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    logging.basicConfig(level=logging.INFO)
+
     parser = _build_parser()
     args = parser.parse_args(argv)
 
@@ -118,10 +117,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     except Exception as exc:  # pragma: no cover - defensive logging
         _LOGGER.error("Research enhancement failed: %s", exc)
-        raise
+        return 1
     return 0
-
-
-if __name__ == "__main__":  # pragma: no cover - manual execution path
-    raise SystemExit(main())
 

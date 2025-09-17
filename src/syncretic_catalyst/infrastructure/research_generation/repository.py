@@ -1,6 +1,7 @@
 """Filesystem adapters for the research generation workflow."""
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Sequence
 
@@ -9,6 +10,9 @@ from ...domain import (
     ProjectDocument,
     ResearchProposalResult,
 )
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class FileSystemResearchGenerationRepository:
@@ -55,9 +59,15 @@ class FileSystemResearchGenerationRepository:
             try:
                 content = path.read_text(encoding=self._encoding)
             except UnicodeDecodeError as exc:
-                content = f"[Error decoding {name}: {exc}]"
+                _LOGGER.warning(
+                    "Skipping document '%s' due to decode error: %s", name, exc
+                )
+                continue
             except OSError as exc:
-                content = f"[Error reading {name}: {exc}]"
+                _LOGGER.warning(
+                    "Skipping document '%s' due to read error: %s", name, exc
+                )
+                continue
             documents.append(ProjectDocument(name=name, content=content))
         return documents
 

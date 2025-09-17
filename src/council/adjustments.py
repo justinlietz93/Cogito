@@ -21,7 +21,17 @@ def apply_adjustments_to_tree(
         adjustment = adjustment_map[node_id]
         original_confidence = node.get("confidence", 0.0)
         delta = adjustment.get("confidence_delta", 0.0)
-        adjusted_confidence = max(0.0, min(1.0, original_confidence + delta))
+        raw_confidence = original_confidence + delta
+        adjusted_confidence = max(0.0, min(1.0, raw_confidence))
+        if adjusted_confidence != raw_confidence:
+            logger.warning(
+                "Confidence for claim '%s' clamped from %.2f to %.2f (original=%.2f, delta=%+.2f).",
+                node_id,
+                raw_confidence,
+                adjusted_confidence,
+                original_confidence,
+                delta,
+            )
         node["confidence"] = adjusted_confidence
         node["arbitration"] = adjustment.get("arbitration_comment")
         logger.debug(

@@ -16,6 +16,10 @@ from .pipeline_input import (
 from .council_orchestrator import run_critique_council
 from .output_formatter import format_critique_output
 
+
+class CritiqueExecutionError(RuntimeError):
+    """Raised when the critique pipeline fails unexpectedly."""
+
 # Make synchronous
 def critique_goal_document(
     input_data: Union[str, PipelineInput, Mapping[str, Any]],
@@ -90,7 +94,9 @@ def critique_goal_document(
         raise ValueError(f"Invalid critique input: {exc}") from exc
     except Exception as exc:  # noqa: BLE001 - We intentionally re-wrap unexpected errors.
         logger.error("Unexpected error in critique_goal_document: %s", exc, exc_info=True)
-        raise Exception(f"Critique module failed unexpectedly: {exc}") from exc
+        raise CritiqueExecutionError(
+            f"Critique module failed unexpectedly: {exc}"
+        ) from exc
 
 # Keep direct execution block, but make it synchronous
 if __name__ == '__main__':

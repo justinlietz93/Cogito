@@ -122,3 +122,17 @@ def test_main_accepts_direct_text(mock_read, mock_council, mock_format):
 
     mock_format.assert_called_once()
     assert result == "Formatted: direct"
+
+
+@patch(PATCH_FORMAT)
+@patch(PATCH_COUNCIL)
+@patch(PATCH_INPUT)
+def test_main_empty_direct_text_raises(mock_read, mock_council, mock_format):
+    """Empty direct text inputs should raise a validation error."""
+
+    mock_read.side_effect = FileNotFoundError("No file")
+    mock_council.return_value = {'final_assessment': 'Great', 'points': [], 'no_findings': True}
+    mock_format.return_value = "Formatted: direct"
+
+    with pytest.raises(ValueError, match="Critique input contains no content."):
+        critique_goal_document("")

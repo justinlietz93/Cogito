@@ -65,7 +65,10 @@ class FileSystemThesisOutputRepository:
                 f"   ArXiv ID: {identifier}",
             ]
             if paper.summary:
-                entry.append(f"   Summary: {paper.summary[:300]}...")
+                summary_text = paper.summary[:300]
+                if len(paper.summary) > 300:
+                    summary_text += "..."
+                entry.append(f"   Summary: {summary_text}")
             lines.extend(entry)
             lines.append("")
         return "\n".join(lines).rstrip() + "\n"

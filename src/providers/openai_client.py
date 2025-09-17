@@ -88,7 +88,8 @@ def call_openai_with_retry(
     # Determine if we're using an o-series reasoning model which requires the
     # responses.create API endpoint.
     lower_model = str(default_model).lower()
-    is_response_api_model = 'o1' in lower_model or 'o3' in lower_model
+    normalised_model = lower_model.split("/")[-1]
+    is_response_api_model = normalised_model in {"o1", "o1-mini", "o3", "o3-mini"}
     
     if is_response_api_model:
         # o1 models use the responses.create API with a completely different structure

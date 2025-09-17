@@ -61,7 +61,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     args = parser.parse_args(list(argv) if argv is not None else None)
 
-    service, repository = build_service(args.project_dir, model=args.model)
+    try:
+        service, repository = build_service(args.project_dir, model=args.model)
+    except OSError as exc:
+        print(
+            f"Error: Failed to prepare project directory '{args.project_dir}': {exc}"
+        )
+        return 1
     try:
         result = service.generate_proposal(max_tokens=args.max_tokens)
     except ProjectDocumentsNotFound as exc:
@@ -69,6 +75,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     except RuntimeError as exc:
         print(f"Error: {exc}")
+        return 1
+    except OSError as exc:
+        print(f"Error: Failed to write proposal artefacts: {exc}")
         return 1
 
     print(f"Prompt saved to {repository.prompt_path}")

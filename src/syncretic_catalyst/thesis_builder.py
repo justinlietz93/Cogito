@@ -30,9 +30,6 @@ def build_thesis(
 ) -> ThesisResearchResult:
     """Run the thesis builder workflow for the provided concept."""
 
-    if not logging.getLogger().handlers:
-        logging.basicConfig(level=logging.INFO)
-
     _LOGGER.info("Starting Syncretic Catalyst Thesis Builder")
 
     orchestrator = AIOrchestrator(model_name=model)
@@ -93,6 +90,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    logging.basicConfig(level=logging.INFO)
+
     parser = _build_parser()
     args = parser.parse_args(argv)
 
@@ -106,9 +105,5 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     except Exception as exc:  # pragma: no cover - defensive logging
         _LOGGER.error("Thesis builder failed: %s", exc)
-        raise
+        return 1
     return 0
-
-
-if __name__ == "__main__":  # pragma: no cover - manual execution path
-    raise SystemExit(main())

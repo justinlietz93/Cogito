@@ -207,7 +207,7 @@ class ResearchEnhancementService:
             "=== PROJECT DESCRIPTION ===\n"
             f"{truncated_project}\n\n"
             "=== RELEVANT EXISTING LITERATURE ===\n"
-            f"{paper_text if paper_text else 'No papers were retrieved.'}\n\n"
+            f"{paper_text or 'No papers were retrieved.'}\n\n"
             "=== ANALYSIS REQUESTED ===\n"
             "Provide a detailed analysis structured in the following sections:\n"
             "1. Uniqueness Analysis\n"
@@ -235,7 +235,7 @@ class ResearchEnhancementService:
             "=== RESEARCH GAP ANALYSIS ===\n"
             f"{gap_analysis.content}\n\n"
             "=== RELEVANT LITERATURE (For Citations) ===\n"
-            f"{citations_text if citations_text else 'No literature was retrieved.'}\n\n"
+            f"{citations_text or 'No literature was retrieved.'}\n\n"
             "=== ENHANCEMENT REQUESTED ===\n"
             "Create an enhanced academic research proposal that:\n"
             "1. Maintains the original project's core ideas and structure\n"
@@ -271,12 +271,14 @@ class ResearchEnhancementService:
     def _extract_key_concepts(self, content: str, *, max_concepts: int) -> list[str]:
         paragraphs = re.split(r"\n\n+", content)
         concepts: list[str] = []
+        concepts_set: set[str] = set()
 
         def _append_if_new(values: Iterable[str]) -> None:
             for value in values:
                 candidate = value.strip()
-                if 3 < len(candidate) < 80 and candidate not in concepts:
+                if 3 < len(candidate) < 80 and candidate not in concepts_set:
                     concepts.append(candidate)
+                    concepts_set.add(candidate)
                     if len(concepts) >= max_concepts:
                         return
 
