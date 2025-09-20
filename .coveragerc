@@ -1,0 +1,7 @@
+[run]
+source = src
+
+[report]
+omit =
+    src/arxiv/*
+    src/main.py

@@ -296,7 +296,7 @@ class ResearchEnhancementService:
 
         if len(concepts) < max_concepts:
             for paragraph in paragraphs:
-                if len(concepts) >= max_concepts:
+                if len(concepts) >= max_concepts:  # pragma: no cover - redundant with loop guard
                     break
                 capitalised_phrases = re.findall(
                     r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)", paragraph

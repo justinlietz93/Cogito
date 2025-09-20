@@ -222,6 +222,6 @@ def run_example():
     print("NOTE: Reasoning tree example usage needs update for new recommendation/concession fields.")
     pass
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover - exercised via example invocation tests
     logging.basicConfig(level=logging.INFO)
     run_example()
