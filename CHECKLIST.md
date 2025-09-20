@@ -53,11 +53,15 @@ This checklist tracks the outstanding work required to keep the entire `src/` tr
   - Extended `tests/providers/test_model_config.py` with cache-reset hooks and new assertions covering environment fallbacks, provider-specific defaults, and configuration caching semantics.
 
 ## Infrastructure and Syncretic Catalyst Modules
-- [ ] Write tests for repositories and gateways under `src/infrastructure/` and `src/syncretic_catalyst/infrastructure/`, focusing on file persistence, caching, and error handling (many modules sit between 16–93% coverage).
-- [ ] Cover application workflows in `src/syncretic_catalyst/application/workflow.py` and related services to ensure orchestration logic is exercised (currently 17% coverage).
-- [ ] Add tests for `src/syncretic_catalyst/ai_clients.py` to validate client selection and error fallbacks.
+- [x] Write tests for repositories and gateways under `src/infrastructure/` and `src/syncretic_catalyst/infrastructure/`, focusing on file persistence, caching, and error handling (many modules sit between 16–93% coverage).
+  - Repositories and gateways are now exercised end-to-end via `tests/infrastructure/*` and the dedicated `tests/syncretic_catalyst/infrastructure/` suites, covering persistence, caching, and error branches.
+- [x] Cover application workflows in `src/syncretic_catalyst/application/workflow.py` and related services to ensure orchestration logic is exercised (currently 17% coverage).
+  - Added regression tests for CLI entry points and workflow facades in `tests/syncretic_catalyst/test_assemble_research.py`, `test_research_enhancer.py`, `test_research_generator.py`, `test_thesis_builder.py`, and `presentation/test_cli.py`, raising the orchestration modules above the 95% threshold.
+- [x] Add tests for `src/syncretic_catalyst/ai_clients.py` to validate client selection and error fallbacks.
+  - `tests/syncretic_catalyst/test_ai_clients.py` now verifies provider routing, fallback behaviour, and error messaging.
 
 ## General Quality Gates
 - [x] After adding tests, rerun `coverage report` (with the broadened config) to verify the overall project coverage meets or exceeds 95%.
   - `pytest --cov=src --cov-report=term-missing` now reports 99% coverage with only a defensive guard remaining.
-- [ ] Keep the checklist updated as modules reach ≥95% coverage and all suite warnings are resolved.
+- [x] Keep the checklist updated as modules reach ≥95% coverage and all suite warnings are resolved.
+  - Syncretic Catalyst coverage additions and `.coveragerc` updates documented above ensure the checklist reflects the current status.

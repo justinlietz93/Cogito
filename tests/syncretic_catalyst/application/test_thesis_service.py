@@ -161,6 +161,43 @@ def test_collect_papers_truncates_secondary_results_on_limit(
     assert len(reference_service.calls) == 2
 
 
+def test_collect_papers_breaks_before_querying_additional_terms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class TrackingReferenceService:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, int]] = []
+
+        def search(self, query: str, *, max_results: int) -> Sequence[ResearchPaper]:
+            self.calls.append((query, max_results))
+            if len(self.calls) == 1:
+                return [make_paper("primary", "Primary")] 
+            return [make_paper("secondary", "Secondary")]
+
+    reference_service = TrackingReferenceService()
+    service = ThesisBuilderService(
+        reference_service=reference_service,
+        output_repository=FakeOutputRepository(),
+        content_generator=FakeContentGenerator(),
+        clock=FakeClock(),
+        agent_profiles=[make_profile("SynthesisArbitrator"), make_profile("Explorer")],
+    )
+
+    def fake_extract(self, concept: str, *, max_terms: int = 5) -> Sequence[str]:
+        return ["first", "second"]
+
+    monkeypatch.setattr(
+        service,
+        "_extract_key_terms",
+        MethodType(fake_extract, service),
+    )
+
+    collected = service._collect_papers("Concept", max_papers=2)
+
+    assert [paper.identifier for paper in collected] == ["primary", "secondary"]
+    assert len(reference_service.calls) == 2
+
+
 def test_extract_key_terms_deduplicates_case_insensitive() -> None:
     reference_service = FakeReferenceService(
         [make_paper("p", "Primary")],

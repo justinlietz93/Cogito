@@ -232,6 +232,31 @@ def test_collect_papers_skips_duplicate_primary_results() -> None:
     assert [paper.identifier for paper in collected] == ["dup"]
 
 
+def test_collect_papers_skips_secondary_duplicates() -> None:
+    class SecondaryDuplicateService:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def search(self, query: str, *, max_results: int):
+            self.calls += 1
+            if self.calls == 1:
+                return [make_paper("primary", "Primary")]
+            return [
+                make_paper("primary", "Duplicate"),
+                make_paper("secondary", "Secondary"),
+            ][:max_results]
+
+    service = ResearchEnhancementService(
+        reference_service=SecondaryDuplicateService(),
+        project_repository=FakeRepository([]),
+        content_generator=FakeContentGenerator(),
+    )
+
+    collected = service._collect_papers("content", ["concept"], max_papers=3)
+
+    assert [paper.identifier for paper in collected] == ["primary", "secondary"]
+
+
 def test_extract_project_title_returns_unknown() -> None:
     repository = FakeRepository([])
     reference_service = FakeReferenceService([])
