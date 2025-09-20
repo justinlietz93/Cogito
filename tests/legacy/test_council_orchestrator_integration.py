@@ -1,13 +1,9 @@
-# tests/test_council_orchestrator.py
+# Legacy integration-style council orchestrator tests
 
 import pytest
-import os
-import sys
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch
 from typing import Dict, Any
 
-# Adjust path to import from the new src directory
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.council_orchestrator import run_critique_council
 # Import agent classes to allow mocking their methods if needed
 from src.reasoning_agent import AristotleAgent, DescartesAgent, KantAgent, LeibnizAgent, PopperAgent, RussellAgent

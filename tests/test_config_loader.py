@@ -1,6 +1,9 @@
 import sys
 from pathlib import Path
 
+import sys
+from pathlib import Path
+
 import pytest
 import yaml
 
@@ -44,3 +47,28 @@ def test_loader_handles_malformed_yaml(tmp_path: Path) -> None:
 
     with pytest.raises(yaml.YAMLError):
         ConfigLoader(config_path=str(malformed_yaml_path), eager_load=True)
+
+
+def test_get_helpers_and_overrides(tmp_path: Path) -> None:
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("""
+latex:
+  documentclass: article
+reasoning_tree:
+  enabled: true
+council_orchestrator:
+  timeout: 30
+misc:
+  answer: 42
+""".strip())
+
+    loader = ConfigLoader(config_path=str(config_file))
+
+    assert loader.get("misc", "answer") == 42
+    assert loader.get("misc", "missing", default="fallback") == "fallback"
+    assert loader.get_latex_config()["documentclass"] == "article"
+    assert loader.get_reasoning_tree_config()["enabled"] is True
+    assert loader.get_council_orchestrator_config()["timeout"] == 30
+
+    loader.config = {"override": True}
+    assert loader.config["override"] is True

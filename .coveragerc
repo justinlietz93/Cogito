@@ -1,0 +1,9 @@
+[run]
+source = src
+
+[report]
+omit =
+    src/arxiv/*
+    src/presentation/cli/*
+    src/syncretic_catalyst/*
+    src/main.py
