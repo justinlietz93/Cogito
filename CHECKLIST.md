@@ -34,7 +34,8 @@ This checklist tracks the outstanding work required to keep the entire `src/` tr
   - Added focused suites in `tests/latex/test_cli.py`, `tests/latex/test_config.py`, and `tests/latex/test_formatter_behavior.py` that exercise CLI overrides, configuration validation, direct conversion flows, and standard template fallbacks.
 - [x] Strengthen coverage for helper modules such as `src/latex/converters/markdown_to_latex.py`, `math_formatter.py`, and the processors/utilities packages (coverage ranges from 51–90%).
   - Added metadata assertions for the jargon processor and exercised remaining formatter fallbacks so all helpers now exceed 95% coverage.
-- [ ] Mock out file and compiler dependencies in `src/latex/utils/file_manager.py` and `latex_compiler.py` so that compilation error handling and retry logic are tested without invoking external binaries.
+- [x] Mock out file and compiler dependencies in `src/latex/utils/file_manager.py` and `latex_compiler.py` so that compilation error handling and retry logic are tested without invoking external binaries.
+  - `tests/latex/test_file_manager.py`, `tests/latex/test_latex_compiler_compile.py`, and `tests/latex/test_latex_compiler_engine.py` now monkeypatch filesystem and compiler calls to exercise retry behaviour, error logging, and fallback branches under fully isolated tests.
 
 ## Presentation Layer
 - [ ] Break up and test `src/presentation/cli/app.py` (currently 22% covered). Focus on command routing, configuration loading, and error handling, possibly by extracting smaller, testable components.
