@@ -5,6 +5,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import logging
+
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -159,3 +161,51 @@ def test_generate_content_wraps_configuration_errors(monkeypatch: pytest.MonkeyP
 
     with pytest.raises(claude_client.ClaudeClientError):
         claude_client.generate_content([{"role": "user", "content": "Hi"}])
+
+
+def test_generate_content_defaults_thinking_budget_and_logs_thinking(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """When no budget is provided the helper should derive one and log thinking deltas."""
+
+    captured: dict[str, Any] = {}
+
+    def fake_configure_client(api_key: str | None = None) -> Any:
+        class FakeMessages:
+            def create(self, **params: Any) -> list[SimpleNamespace]:
+                captured["params"] = params
+                return [
+                    make_chunk(
+                        "content_block_start",
+                        index=0,
+                        content_block=SimpleNamespace(type="thinking"),
+                    ),
+                    make_chunk(
+                        "content_block_delta",
+                        delta=SimpleNamespace(
+                            type="thinking_delta", thinking="deliberating"
+                        ),
+                    ),
+                    make_chunk(
+                        "content_block_delta",
+                        delta=SimpleNamespace(type="text_delta", text="Answer"),
+                    ),
+                    make_chunk("message_stop"),
+                ]
+
+        return SimpleNamespace(messages=FakeMessages())
+
+    monkeypatch.setattr(claude_client, "configure_client", fake_configure_client)
+
+    caplog.set_level(logging.DEBUG, logger=claude_client.logger.name)
+
+    result = claude_client.generate_content(
+        [{"role": "user", "content": "Explain"}],
+        max_tokens=1500,
+        enable_thinking=True,
+    )
+
+    assert result == "Answer"
+    params = captured["params"]
+    assert params["thinking"]["budget_tokens"] == 1024
+    assert any("Thinking: deliberating" in record.getMessage() for record in caplog.records)

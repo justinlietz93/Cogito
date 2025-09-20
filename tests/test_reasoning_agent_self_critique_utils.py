@@ -38,6 +38,32 @@ def test_collect_nodes_handles_non_dict_and_invalid_children():
     assert {'root', 'child', 'branch', 'leaf'} <= collected_ids
 
 
+def test_collect_nodes_skips_chameleon_nodes():
+    class ChameleonNode:
+        def __init__(self, data: dict[str, object]) -> None:
+            self._data = data
+            self._appears_dict = True
+
+        @property
+        def __class__(self):  # type: ignore[override]
+            if self._appears_dict:
+                self._appears_dict = False
+                return dict
+            return object
+
+        def get(self, key: str, default: object | None = None) -> object | None:
+            return self._data.get(key, default)
+
+    tree = {
+        'id': 'root',
+        'sub_critiques': [ChameleonNode({'id': 'tricky'})],
+    }
+
+    collected = _collect_nodes(tree)
+    ids = {node.get('id') for node, _depth in collected}
+    assert 'tricky' not in ids
+
+
 def test_filter_peer_nodes_fallback_to_original():
     peers = [{'assigned_point_id': 'other', 'confidence': 0.5}]
     assert _filter_peer_nodes(peers, 'target') is peers
