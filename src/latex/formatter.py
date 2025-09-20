@@ -144,7 +144,11 @@ class LatexFormatter:
             direct_title = title_match.group(1) if title_match else "Scientific Peer Review"
             
             # Instantiate and generate the full document directly
-            direct_generator = DirectLatexGenerator(peer_review, title=direct_title)
+            direct_generator = DirectLatexGenerator(
+                peer_review,
+                title=direct_title,
+                custom_preamble=self.config.get('custom_preamble', '')
+            )
             rendered_content = direct_generator.generate_latex_document()
             
             # Write the output file

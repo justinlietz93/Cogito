@@ -15,7 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.providers import openai_client
-from src.providers.exceptions import ApiCallError
+from src.providers.exceptions import ApiCallError, ModelCallError
 
 def _build_o3_response(payload: str) -> SimpleNamespace:
     """Return a minimal object that mimics the responses.create structure."""
@@ -86,6 +86,33 @@ def test_call_openai_with_retry_repairs_truncated_json(monkeypatch: pytest.Monke
     assert result["points"][0]["id"] == "point-1"
 
 
+def test_call_openai_with_retry_sets_o1_max_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    """O1 parameters should include ``max_output_tokens`` when provided."""
+
+    captured: dict[str, Any] = {}
+
+    class DummyClient:
+        def __init__(self, api_key: str) -> None:
+            self.responses = SimpleNamespace(create=self._create)
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=lambda **_: None))
+
+        def _create(self, **kwargs: Any) -> SimpleNamespace:
+            captured.update(kwargs)
+            return _build_o3_response("{}")
+
+    monkeypatch.setattr(openai_client, "OpenAI", DummyClient)
+
+    openai_client.call_openai_with_retry(
+        prompt_template="Prompt",
+        context={},
+        config={"api": {"openai": {"model": "o3", "resolved_key": "k"}}},
+        is_structured=True,
+        max_tokens=256,
+    )
+
+    assert captured["max_output_tokens"] == 256
+
+
 def test_call_openai_with_retry_returns_text_for_chat_models(monkeypatch: pytest.MonkeyPatch) -> None:
     """Non o1/o3 models should go through the chat completions API and return raw text."""
 
@@ -113,6 +140,211 @@ def test_call_openai_with_retry_returns_text_for_chat_models(monkeypatch: pytest
     assert result == "Plain response"
 
 
+def test_call_openai_with_retry_sets_chat_max_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Chat completions should forward the ``max_tokens`` argument."""
+
+    captured: Dict[str, Any] = {}
+
+    def _create(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="Resp"))])
+
+    class DummyClient:
+        def __init__(self, api_key: str) -> None:
+            self.responses = SimpleNamespace(create=lambda **_: None)
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=_create))
+
+    monkeypatch.setattr(openai_client, "OpenAI", DummyClient)
+
+    openai_client.call_openai_with_retry(
+        prompt_template="Prompt",
+        context={},
+        config={"api": {"openai": {"model": "gpt-4o-mini", "resolved_key": "key"}}},
+        is_structured=False,
+        max_tokens=321,
+    )
+
+    assert captured["max_tokens"] == 321
+
+
+def test_call_openai_with_retry_uses_configured_max_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Configured ``max_tokens`` values should be forwarded to chat completions."""
+
+    captured: Dict[str, Any] = {}
+
+    def _create(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="Resp"))])
+
+    class DummyClient:
+        def __init__(self, api_key: str) -> None:
+            self.responses = SimpleNamespace(create=lambda **_: None)
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=_create))
+
+    monkeypatch.setattr(openai_client, "OpenAI", DummyClient)
+
+    openai_client.call_openai_with_retry(
+        prompt_template="Prompt",
+        context={},
+        config={"api": {"openai": {"model": "gpt-4o-mini", "resolved_key": "key", "max_tokens": 654}}},
+        is_structured=False,
+    )
+
+    assert captured["max_tokens"] == 654
+
+
+def test_call_openai_with_retry_direct_access_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fallback extraction should return content when the first pass fails."""
+
+    class DummyClient:
+        def __init__(self, api_key: str) -> None:
+            self.responses = SimpleNamespace(create=self._create)
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=lambda **_: None))
+
+        def _create(self, **kwargs: Any) -> SimpleNamespace:
+            alt_content = SimpleNamespace(text="Alternate")
+            return SimpleNamespace(output=[SimpleNamespace(content=[]), SimpleNamespace(content=[alt_content])])
+
+    monkeypatch.setattr(openai_client, "OpenAI", DummyClient)
+
+    result, _ = openai_client.call_openai_with_retry(
+        prompt_template="Prompt",
+        context={},
+        config={"api": {"openai": {"model": "o3", "resolved_key": "k"}}},
+        is_structured=False,
+    )
+
+    assert result == "Alternate"
+
+
+def test_call_openai_with_retry_direct_access_json_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Structured fallback should surface raw text when JSON parsing fails."""
+
+    class DummyClient:
+        def __init__(self, api_key: str) -> None:
+            alt_content = SimpleNamespace(text="{invalid")
+            response = SimpleNamespace(output=[SimpleNamespace(content=[]), SimpleNamespace(content=[alt_content])])
+            self.responses = SimpleNamespace(create=lambda **_: response)
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=lambda **_: None))
+
+    monkeypatch.setattr(openai_client, "OpenAI", DummyClient)
+
+    result, _ = openai_client.call_openai_with_retry(
+        prompt_template="Prompt",
+        context={},
+        config={"api": {"openai": {"model": "o3", "resolved_key": "k"}}},
+        is_structured=True,
+    )
+
+    assert result == "{invalid"
+
+
+def test_call_openai_with_retry_direct_access_parses_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Structured fallback should parse JSON when the payload is valid."""
+
+    payload = json.dumps({"value": 3})
+
+    class DummyClient:
+        def __init__(self, api_key: str) -> None:
+            alt_content = SimpleNamespace(text=payload)
+            response = SimpleNamespace(output=[SimpleNamespace(content=[]), SimpleNamespace(content=[alt_content])])
+            self.responses = SimpleNamespace(create=lambda **_: response)
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=lambda **_: None))
+
+    monkeypatch.setattr(openai_client, "OpenAI", DummyClient)
+
+    result, model = openai_client.call_openai_with_retry(
+        prompt_template="Prompt",
+        context={},
+        config={"api": {"openai": {"model": "o3", "resolved_key": "k"}}},
+        is_structured=True,
+    )
+
+    assert model == "o3"
+    assert result == {"value": 3}
+
+
+def test_call_openai_with_retry_handles_response_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Errors from the responses API should propagate as ``ApiCallError``."""
+
+    class DummyClient:
+        def __init__(self, api_key: str) -> None:
+            self.responses = SimpleNamespace(create=lambda **_: (_ for _ in ()).throw(RuntimeError("boom")))
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=lambda **_: None))
+
+    monkeypatch.setattr(openai_client, "OpenAI", DummyClient)
+
+    with pytest.raises(ApiCallError):
+        openai_client.call_openai_with_retry(
+            prompt_template="Prompt",
+            context={},
+            config={"api": {"openai": {"model": "o3", "resolved_key": "k"}}},
+            is_structured=False,
+        )
+
+
+def test_call_openai_with_retry_wraps_processing_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Processing failures inside the responses branch should raise ``ApiCallError``."""
+
+    class ExplodingResponse:
+        @property
+        def output(self) -> Any:  # pragma: no cover - property executed for coverage
+            raise RuntimeError("explode")
+
+    class DummyClient:
+        def __init__(self, api_key: str) -> None:
+            self.responses = SimpleNamespace(create=lambda **_: ExplodingResponse())
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=lambda **_: None))
+
+    monkeypatch.setattr(openai_client, "OpenAI", DummyClient)
+
+    with pytest.raises(ApiCallError):
+        openai_client.call_openai_with_retry(
+            prompt_template="Prompt",
+            context={},
+            config={"api": {"openai": {"model": "o3", "resolved_key": "k"}}},
+            is_structured=False,
+        )
+
+
+def test_call_openai_with_retry_handles_chat_structure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unexpected chat response shapes should raise ``ApiCallError``."""
+
+    class DummyClient:
+        def __init__(self, api_key: str) -> None:
+            self.responses = SimpleNamespace(create=lambda **_: pytest.fail("Should not hit responses API"))
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=lambda **_: SimpleNamespace(choices=[])))
+
+    monkeypatch.setattr(openai_client, "OpenAI", DummyClient)
+
+    with pytest.raises(ApiCallError):
+        openai_client.call_openai_with_retry(
+            prompt_template="Prompt",
+            context={},
+            config={"api": {"openai": {"model": "gpt-4o-mini", "resolved_key": "k"}}},
+            is_structured=False,
+        )
+
+
+def test_call_openai_with_retry_handles_chat_json_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Chat responses should surface invalid JSON as ``ApiCallError``."""
+
+    class DummyClient:
+        def __init__(self, api_key: str) -> None:
+            content = SimpleNamespace(message=SimpleNamespace(content="not-json"))
+            response = SimpleNamespace(choices=[content])
+            self.responses = SimpleNamespace(create=lambda **_: pytest.fail("Should not hit responses API"))
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=lambda **_: response))
+
+    monkeypatch.setattr(openai_client, "OpenAI", DummyClient)
+
+    with pytest.raises(ApiCallError):
+        openai_client.call_openai_with_retry(
+            prompt_template="Prompt",
+            context={},
+            config={"api": {"openai": {"model": "gpt-4o-mini", "resolved_key": "k"}}},
+            is_structured=True,
+        )
 def test_call_openai_with_retry_defaults_to_configurable_model(monkeypatch: pytest.MonkeyPatch) -> None:
     """If no model is supplied, prefer the flexible gpt-4o-mini default."""
 

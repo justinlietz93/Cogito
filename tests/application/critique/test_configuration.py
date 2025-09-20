@@ -8,7 +8,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import pytest
 
 from src.application.critique.configuration import ModuleConfigBuilder
-from src.application.critique.exceptions import MissingApiKeyError
+from src.application.critique.exceptions import ConfigurationError, MissingApiKeyError
 from src.application.user_settings.services import UserSettingsService
 from src.domain.user_settings.models import UserSettings
 
@@ -119,4 +119,68 @@ def test_missing_primary_key_raises() -> None:
 
     builder = ModuleConfigBuilder(base_config, service, lambda key: None)
     with pytest.raises(MissingApiKeyError):
+        builder.build()
+
+
+def test_builder_prefers_user_selected_provider() -> None:
+    settings = UserSettings(
+        api_keys={"anthropic": "pref-key", "openai": "ignored"},
+        preferred_provider="anthropic",
+    )
+    service = build_service(settings)
+    base_config = {
+        "api": {
+            "primary_provider": "openai",
+            "openai": {"api_key": "from-openai"},
+            "providers": {"anthropic": {"model": "claude"}},
+        }
+    }
+
+    builder = ModuleConfigBuilder(base_config, service, lambda key: None)
+    config = builder.build()
+
+    assert config["api"]["primary_provider"] == "anthropic"
+    assert config["api"]["resolved_key"] == "pref-key"
+
+
+def test_builder_uses_api_key_from_provider_entry_when_present() -> None:
+    service = build_service()
+    base_config = {
+        "api": {
+            "primary_provider": "openai",
+            "openai": {"api_key": "embedded-key"},
+        }
+    }
+
+    builder = ModuleConfigBuilder(base_config, service, lambda key: None)
+    config = builder.build()
+
+    assert config["api"]["resolved_key"] == "embedded-key"
+    assert config["api"]["providers"]["openai"]["resolved_key"] == "embedded-key"
+
+
+def test_builder_falls_back_to_sorted_provider_when_not_configured() -> None:
+    service = build_service(UserSettings(api_keys={"claude": "c-key"}))
+    base_config = {
+        "api": {
+            "providers": {
+                "openai": {"api_key": "o-key"},
+                "claude": {"api_key": "c-key"},
+            }
+        }
+    }
+
+    builder = ModuleConfigBuilder(base_config, service, lambda key: None)
+    config = builder.build()
+
+    assert config["api"]["primary_provider"] == "claude"
+    assert config["api"]["resolved_key"] == "c-key"
+
+
+def test_builder_raises_when_no_providers_detected() -> None:
+    service = build_service(UserSettings())
+    base_config = {"api": {}}
+
+    builder = ModuleConfigBuilder(base_config, service, lambda key: None)
+    with pytest.raises(ConfigurationError):
         builder.build()
