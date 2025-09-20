@@ -9,7 +9,7 @@ bypassing complex markdown parsing for robustness.
 
 import re
 import logging
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Match
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ class DirectLatexGenerator:
         ('\t', '    '),    # Replace tabs with spaces
     ]
 
-    def __init__(self, content: str, title: Optional[str] = None):
+    def __init__(self, content: str, title: Optional[str] = None, custom_preamble: Optional[str] = None):
         """
         Initialize the generator with the markdown content.
 
@@ -65,6 +65,7 @@ class DirectLatexGenerator:
         self.raw_content: str = content
         self.title: str = title if title else self._extract_title(content)
         self.processed_lines: List[str] = []
+        self.custom_preamble = custom_preamble or ""
 
     def _extract_title(self, content: str) -> str:
         """
@@ -83,31 +84,36 @@ class DirectLatexGenerator:
         return "Scientific Peer Review"
 
     def _escape_latex_chars(self, text: str) -> str:
-        """
-        Escapes special LaTeX characters in a given string.
+        """Escape LaTeX reserved characters while preserving existing commands."""
 
-        Args:
-            text: The string to escape.
-
-        Returns:
-            The string with special characters escaped.
-        """
-        # Apply specific replacements first. Some replacements intentionally
-        # inject LaTeX fragments (for example ``$\\approx$``) that must not be
-        # escaped again when we later walk through ``LATEX_SPECIAL_CHARS``. To
-        # keep those fragments intact we temporarily swap them for placeholders
-        # that survive the escaping pass and then restore the originals.
         placeholders: Dict[str, str] = {}
         placeholder_prefix = "\uF000"
         placeholder_suffix = "\uF001"
         placeholder_index = 0
 
         def _store_placeholder(value: str) -> str:
-            nonlocal placeholder_index, placeholders
+            nonlocal placeholder_index
             placeholder = f"{placeholder_prefix}{placeholder_index}{placeholder_suffix}"
             placeholder_index += 1
             placeholders[placeholder] = value
             return placeholder
+
+        def _protect(pattern: re.Pattern[str]) -> None:
+            nonlocal text
+            matches = list(pattern.finditer(text))
+            for match in reversed(matches):
+                start, end = match.span()
+                original = match.group(0)
+                placeholder = _store_placeholder(original)
+                text = f"{text[:start]}{placeholder}{text[end:]}"
+
+        # Preserve existing LaTeX commands (e.g. ``\textbf{}``) and explicit
+        # escapes (e.g. ``\%``) so that we do not corrupt them during the
+        # generic escaping phase below.
+        command_pattern = re.compile(r'\\[a-zA-Z@]+(?:\[[^\]]*\])?(?:{[^{}]*})?')
+        escaped_symbol_pattern = re.compile(r'\\[\\%&\$#{}_~^]')
+        _protect(command_pattern)
+        _protect(escaped_symbol_pattern)
 
         for old, new in self.CHARACTER_REPLACEMENTS:
             if any(marker in new for marker in ("\\", "$")):
@@ -115,74 +121,97 @@ class DirectLatexGenerator:
             else:
                 text = text.replace(old, new)
 
-        # Apply standard LaTeX escapes while protecting the generated fragments
-        # with the same placeholder strategy so that newly introduced
-        # backslashes survive the backslash escaping step that runs afterwards.
         for char, escaped in self.LATEX_SPECIAL_CHARS.items():
             if char == '\\':
-                continue  # handled separately to avoid double-escaping commands
+                continue
             if char in text:
                 if any(marker in escaped for marker in ("\\", "$")):
                     text = text.replace(char, _store_placeholder(escaped))
                 else:
-                    text = text.replace(char, escaped)
+                    text = text.replace(char, escaped)  # pragma: no cover - current mappings always use placeholders
 
         if '\\' in text:
-            # Avoid double-escaping backslashes if they are part of commands
-            text = re.sub(r'(?<!\\)\\{1}(?![a-zA-Z@])', self.LATEX_SPECIAL_CHARS['\\'], text)
+            text = re.sub(
+                r'(?<!\\)\\(?![a-zA-Z@])',
+                lambda _: self.LATEX_SPECIAL_CHARS['\\'],
+                text,
+            )
 
-        if placeholders:
-            for placeholder, replacement in placeholders.items():
-                text = text.replace(placeholder, replacement)
+        for placeholder, replacement in placeholders.items():
+            text = text.replace(placeholder, replacement)
         return text
 
+    def _apply_inline_formatting(self, text: str) -> tuple[str, Dict[str, str]]:
+        """Convert basic markdown emphasis to LaTeX commands using placeholders."""
+
+        emphasis_placeholders: Dict[str, str] = {}
+        placeholder_prefix = "\uE000"
+        placeholder_suffix = "\uE001"
+        placeholder_index = 0
+
+        def _store_emphasis(value: str) -> str:
+            nonlocal placeholder_index
+            placeholder = f"{placeholder_prefix}{placeholder_index}{placeholder_suffix}"
+            placeholder_index += 1
+            emphasis_placeholders[placeholder] = value
+            return placeholder
+
+        def _convert_bold(match: Match[str]) -> str:
+            inner = self._escape_latex_chars(match.group(1))
+            return _store_emphasis(f"\\textbf{{{inner}}}")
+
+        def _convert_italic(match: Match[str]) -> str:
+            inner = self._escape_latex_chars(match.group(1))
+            return _store_emphasis(f"\\textit{{{inner}}}")
+
+        text = re.sub(r'\*\*(.+?)\*\*', _convert_bold, text)
+        text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', _convert_italic, text)
+
+        return text, emphasis_placeholders
+
     def _process_line(self, line: str) -> str:
-        """
-        Processes a single line of markdown content for LaTeX conversion.
+        """Process a single line of markdown content for LaTeX output."""
 
-        Handles headings, horizontal rules, and basic formatting.
-
-        Args:
-            line: The line to process.
-
-        Returns:
-            The processed line in LaTeX format.
-        """
         stripped_line = line.strip()
 
-        # Handle headings first to avoid escaping '#'
+        if not stripped_line:
+            return ""
+
+        def _finalise_inline(text: str, placeholders: Dict[str, str]) -> str:
+            escaped = self._escape_latex_chars(text)
+            for placeholder, replacement in placeholders.items():
+                escaped = escaped.replace(placeholder, replacement)
+            return escaped
+
+        # Headings and numbered sections take precedence and should not include
+        # additional formatting conversions.
         if stripped_line.startswith('# '):
-            return f"\\section*{{{self._escape_latex_chars(stripped_line[2:].strip())}}}"
-        elif stripped_line.startswith('## '):
-            return f"\\subsection*{{{self._escape_latex_chars(stripped_line[3:].strip())}}}"
-        elif stripped_line.startswith('### '):
-            return f"\\subsubsection*{{{self._escape_latex_chars(stripped_line[4:].strip())}}}"
-        # Handle numbered sections (assuming simple format like "1. Section Title")
-        elif re.match(r'^\d+\.\s+.+$', stripped_line):
-            match = re.match(r'^(\d+)\.\s+(.+)$', stripped_line)
-            if match:
-                # Using subsection* for unnumbered sections in TOC
-                return f"\\subsection*{{{self._escape_latex_chars(match.group(2).strip())}}}"
-        # Handle horizontal rules
-        elif stripped_line in ['---', '***', '___', '───']:
-            return "\\par\\noindent\\hrulefill\\par" # More robust rule
+            text, placeholders = self._apply_inline_formatting(stripped_line[2:].strip())
+            return f"\\section*{{{_finalise_inline(text, placeholders)}}}"
+        if stripped_line.startswith('## '):
+            text, placeholders = self._apply_inline_formatting(stripped_line[3:].strip())
+            return f"\\subsection*{{{_finalise_inline(text, placeholders)}}}"
+        if stripped_line.startswith('### '):
+            text, placeholders = self._apply_inline_formatting(stripped_line[4:].strip())
+            return f"\\subsubsection*{{{_finalise_inline(text, placeholders)}}}"
 
-        # Escape remaining special characters for regular lines
-        processed_line = self._escape_latex_chars(line)
+        numbered_match = re.match(r'^(\d+)\.\s+(.+)$', stripped_line)
+        if numbered_match:
+            text, placeholders = self._apply_inline_formatting(numbered_match.group(2).strip())
+            return f"\\subsection*{{{_finalise_inline(text, placeholders)}}}"
 
-        # Convert basic markdown emphasis (after escaping)
-        # Use non-greedy matching (.+?)
-        processed_line = re.sub(r'\\\*\\\*(.+?)\\\*\\\*', r'\\textbf{\1}', processed_line) # Matches escaped **
-        processed_line = re.sub(r'\\\*(.+?)\\\*', r'\\textit{\1}', processed_line)     # Matches escaped *
+        if stripped_line in {'---', '***', '___', '───'}:
+            return "\\par\\noindent\\hrulefill\\par"
 
-        # Handle lists (simple bullet points) - needs context, handled in generate_latex_body
-        # Handle blockquotes - remove '>'
-        processed_line = re.sub(r'^>\s*', '', processed_line)
+        # Remove blockquote markers before further processing.
+        content = re.sub(r'^>\s*', '', line)
 
-        # Skip any remaining raw markdown section headers
-        if processed_line.strip().startswith('\\#'): # Check for escaped '#'
-             logger.debug(f"Skipping potential raw markdown header remnant: {processed_line}")
-             return "" # Return empty string to effectively remove the line
+        content, emphasis_placeholders = self._apply_inline_formatting(content)
+        processed_line = _finalise_inline(content, emphasis_placeholders)
+
+        if processed_line.strip().startswith('\\#'):
+            logger.debug("Skipping potential raw markdown header remnant: %s", processed_line)
+            return ""
 
         return processed_line
 
@@ -197,15 +226,13 @@ class DirectLatexGenerator:
         """
         processed_lines: List[str] = []
         in_itemize = False
-        list_depth = 0
         in_code_block = False
         lines = self.raw_content.splitlines()
 
-        for i, line in enumerate(lines):
+        for line in lines:
             stripped_line = line.strip()
-            is_list_item = stripped_line.startswith('* ') or stripped_line.startswith('- ')
+            is_list_item = bool(re.match(r'^[*-]\s+', stripped_line))
 
-            # Check for code block fences
             if stripped_line == '```':
                 if not in_code_block:
                     processed_lines.append("\\begin{verbatim}")
@@ -213,45 +240,44 @@ class DirectLatexGenerator:
                 else:
                     processed_lines.append("\\end{verbatim}")
                     in_code_block = False
-                continue  # Skip the fence line
-
-            processed_line = self._process_line(line)
+                continue
 
             if in_code_block:
-                processed_lines.append(processed_line)
+                processed_lines.append(line)
                 continue
 
-            # Manage itemize/enumerate environment with depth tracking
-            if is_list_item:
-                list_depth += 1
-                if list_depth == 1:
-                    processed_lines.append("\\begin{itemize}")
-                # Extract item text after '* ' or '- ' and process it
-                item_text = self._process_line(stripped_line[2:], )
-                processed_lines.append('  ' * (list_depth - 1) + f"\\item {item_text}")
-            else:
-                if list_depth > 0 and not is_list_item:
-                    while list_depth > 0:
-                        processed_lines.append('  ' * (list_depth - 1) + "\\end{itemize}")
-                        list_depth -= 1
-
-                if processed_line:  # Add non-empty, non-list lines
-                    processed_lines.append(processed_line)
-                elif not line.strip() and i > 0 and lines[i-1].strip():
-                    # Add paragraph break for blank lines unless previous was also blank
+            if not stripped_line:
+                if in_itemize:
+                    continue
+                if processed_lines and processed_lines[-1] != "\\par":
                     processed_lines.append("\\par")
-
-        # Close any remaining itemize environments
-        while list_depth > 0:
-            processed_lines.append('  ' * (list_depth - 1) + "\\end{itemize}")
-            list_depth -= 1
-
-        # Final cleanup: remove redundant paragraph breaks
-        final_output = []
-        for i, l in enumerate(processed_lines):
-            if l == "\\par" and (i == 0 or processed_lines[i-1] == "\\par"):
                 continue
-            final_output.append(l)
+
+            if is_list_item:
+                if not in_itemize:
+                    processed_lines.append("\\begin{itemize}")
+                    in_itemize = True
+                item_text = stripped_line[2:].lstrip()
+                processed_item = self._process_line(item_text)
+                processed_lines.append(f"  \\item {processed_item}")
+                continue
+
+            if in_itemize:
+                processed_lines.append("\\end{itemize}")
+                in_itemize = False
+
+            processed_line = self._process_line(line)
+            if processed_line:
+                processed_lines.append(processed_line)
+
+        if in_itemize:
+            processed_lines.append("\\end{itemize}")
+
+        final_output: List[str] = []
+        for entry in processed_lines:
+            if entry == "\\par" and final_output and final_output[-1] == "\\par":
+                continue
+            final_output.append(entry)
 
         return '\n'.join(final_output)
 
@@ -265,6 +291,9 @@ class DirectLatexGenerator:
             The complete LaTeX document as a string.
         """
         latex_body = self._process_content_body()
+        custom_preamble = ""
+        if self.custom_preamble.strip():
+            custom_preamble = "\n% Custom preamble additions\n" + self.custom_preamble.strip() + "\n"
 
         # Basic LaTeX document structure
         document = f"""\\documentclass{{article}}
@@ -279,6 +308,8 @@ class DirectLatexGenerator:
     filecolor=magenta,
     urlcolor=cyan,
 }}
+
+{custom_preamble}
 
 % Document metadata
 \\title{{{self._escape_latex_chars(self.title)}}}
@@ -297,7 +328,7 @@ class DirectLatexGenerator:
         return document
 
 # Example usage (for testing purposes if run directly)
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover - manual testing helper
     logging.basicConfig(level=logging.DEBUG)
     logger.info("Testing DirectLatexGenerator...")
 

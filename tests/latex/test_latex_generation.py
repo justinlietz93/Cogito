@@ -112,18 +112,17 @@ However, the Kantian analysis could be strengthened with more explicit reference
     return original_content, critique_content, peer_review_content
 
 
-def test_latex_generation(scientific_mode=False, clean=False, output_dir="latex_output", compile_pdf=False):
-    """
-    Test LaTeX document generation with the given mode.
-    
+def run_latex_generation(scientific_mode=False, clean=False, output_dir="latex_output", compile_pdf=False):
+    """Generate LaTeX artifacts for downstream assertions and manual runs.
+
     Args:
-        scientific_mode: Whether to use scientific mode
-        clean: Whether to clean the output directory before running
-        output_dir: Directory to output generated files
-        compile_pdf: Whether to attempt PDF compilation
-        
+        scientific_mode: Whether to emit the scientific variant of the template.
+        clean: When true, the output directory is purged before rendering.
+        output_dir: Folder that receives the generated TeX (and optional PDF) files.
+        compile_pdf: If set, attempt to compile the TeX output into a PDF.
+
     Returns:
-        Tuple of (success, tex_file_path, pdf_file_path)
+        Tuple containing a success flag, the TeX file path, and the optional PDF path.
     """
     print(f"Testing LaTeX generation (Scientific Mode: {scientific_mode})...")
     
@@ -190,6 +189,23 @@ def test_latex_generation(scientific_mode=False, clean=False, output_dir="latex_
         return False, None, None
 
 
+def test_latex_generation(tmp_path: Path):
+    """Pytest-facing shim ensuring the helper succeeds without returning values."""
+
+    output_directory = tmp_path / "latex_output"
+    success, tex_path, pdf_path = run_latex_generation(
+        scientific_mode=False,
+        clean=True,
+        output_dir=str(output_directory),
+        compile_pdf=False,
+    )
+
+    assert success, "Sample LaTeX generation should complete without errors"
+    assert tex_path, "A LaTeX document path should always be produced"
+    assert Path(tex_path).exists(), "The LaTeX document should be written to disk"
+    assert pdf_path is None, "PDF compilation is disabled in the regression test"
+
+
 def main():
     """Main entry point for the test script."""
     # Parse command line arguments
@@ -201,7 +217,7 @@ def main():
     args = parser.parse_args()
     
     # Run the test
-    success, tex_path, pdf_path = test_latex_generation(
+    success, tex_path, pdf_path = run_latex_generation(
         scientific_mode=args.scientific,
         clean=args.clean,
         output_dir=args.output_dir,

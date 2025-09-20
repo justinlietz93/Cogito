@@ -83,3 +83,33 @@ def test_read_non_utf8_file():
 # Note: Testing UnicodeDecodeError requires creating a non-UTF8 file,
 # which can be platform-dependent or tricky. Mocking open() might be
 # a more robust approach for this specific error case in more complex scenarios.
+
+
+def test_read_file_io_error(monkeypatch, tmp_path):
+    """Tests that low-level IO errors are surfaced as IOError."""
+
+    file_path = tmp_path / "data.txt"
+    file_path.write_text("content", encoding="utf-8")
+
+    def _failing_open(*args, **kwargs):
+        raise OSError("boom")
+
+    monkeypatch.setattr("builtins.open", _failing_open)
+
+    with pytest.raises(IOError, match="Could not read file"):
+        read_file_content(str(file_path))
+
+
+def test_read_file_unexpected_exception(monkeypatch, tmp_path):
+    """Tests that unexpected exceptions propagate with added context."""
+
+    file_path = tmp_path / "data2.txt"
+    file_path.write_text("content", encoding="utf-8")
+
+    def _unexpected_open(*args, **kwargs):
+        raise ValueError("broken encoding table")
+
+    monkeypatch.setattr("builtins.open", _unexpected_open)
+
+    with pytest.raises(Exception, match="An unexpected error occurred"):
+        read_file_content(str(file_path))
