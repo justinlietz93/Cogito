@@ -101,3 +101,4 @@ file_stash/*
 storage/
 storage/arxiv_cache/
 .env
+*.log
