@@ -1,105 +1,280 @@
-# tests/test_output_formatter.py
+"""Tests for the Markdown critique output formatter."""
 
-import pytest
+from __future__ import annotations
+
+import datetime
+import runpy
+import json
 import os
 import sys
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
 
-# Adjust path to import from the new src directory
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from src.output_formatter import format_critique_output
+import pytest
 
-def test_format_with_findings():
-    """Tests formatting when findings are present."""
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, os.fspath(ROOT))
+
+from src import output_formatter
+from src.reasoning_agent import PEER_REVIEW_ENHANCEMENT
+
+
+def _stub_call_with_retry(result: Dict[str, Any]) -> Tuple[List[Tuple[tuple, dict]], Any]:
+    """Return a stub ``call_with_retry`` implementation and capture list."""
+
+    calls: List[Tuple[tuple, dict]] = []
+
+    def _call_with_retry(*args: Any, **kwargs: Any) -> Tuple[Dict[str, Any], str]:
+        calls.append((args, kwargs))
+        return result, "mock-model"
+
+    return calls, _call_with_retry
+
+
+def test_format_critique_output_with_structured_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    """End-to-end smoke test covering successful formatting."""
+
+    judge_payload = {
+        "judge_summary_text": "Comprehensive review summarised.",
+        "judge_overall_score": 95,
+        "judge_score_justification": "Thorough justification."
+    }
+    captured_calls, fake_call = _stub_call_with_retry(judge_payload)
+    monkeypatch.setattr(output_formatter, "call_with_retry", fake_call)
+
+    fixed_now = datetime.datetime(2024, 1, 2, 15, 30, 0)
+
+    class _FixedDatetime(datetime.datetime):
+        @classmethod
+        def now(cls, tz: datetime.tzinfo | None = None) -> datetime.datetime:  # type: ignore[override]
+            return fixed_now
+
+    monkeypatch.setattr(output_formatter.datetime, "datetime", _FixedDatetime)
+
+    critique_tree = {
+        "agent_style": "AgentA",
+        "critique_tree": {
+            "claim": "Primary issue",
+            "severity": "high",
+            "confidence": 0.82,
+            "evidence": "Supporting evidence",  # ensure evidence logging path
+            "recommendation": "Take action",
+            "concession": "None",
+            "sub_critiques": [
+                {
+                    "claim": "Secondary issue",
+                    "severity": "low",
+                    "confidence": 0.55,
+                    "arbitration": "Resolved",
+                    "sub_critiques": []
+                }
+            ],
+        },
+    }
+
     critique_data = {
-        'final_assessment': 'Assessment with findings.',
-        'points': [
-            {'area': 'Area 1', 'critique': 'Critique A', 'severity': 'High', 'confidence': 0.9},
-            {'area': 'Area 2', 'critique': 'Critique B', 'severity': 'Low', 'confidence': 0.5}
+        "adjusted_critique_trees": [critique_tree],
+        "arbitration_adjustments": [
+            {"target_claim_id": "claim-1", "arbitration_comment": "Clarified", "confidence_delta": 0.1}
         ],
-        'no_findings': False
+        "arbiter_overall_score": 82,
+        "arbiter_score_justification": "Balanced view.",
+        "score_metrics": {
+            "high_severity_points": 2,
+            "medium_severity_points": 1,
+            "low_severity_points": 0,
+        },
     }
-    output = format_critique_output(critique_data)
 
-    assert "=== CRITIQUE ASSESSMENT REPORT ===" in output
-    assert "OVERALL ASSESSMENT:" in output
-    assert "- Assessment with findings." in output
-    assert "IDENTIFIED POINTS:" in output
-    assert "1. AREA: Area 1" in output
-    assert "SEVERITY: High (Confidence: 0.90)" in output # Check confidence included
-    assert "CRITIQUE: Critique A" in output
-    assert "2. AREA: Area 2" in output
-    assert "SEVERITY: Low (Confidence: 0.50)" in output # Check confidence included
-    assert "CRITIQUE: Critique B" in output
-    assert "=== END OF REPORT ===" in output
-    assert "NO SIGNIFICANT POINTS" not in output
+    report = output_formatter.format_critique_output(
+        critique_data,
+        original_content="Original manuscript text",
+        config={"api": {"openai": {"model": "test-model"}}},
+        peer_review=True,
+    )
 
-def test_format_no_findings_flag():
-    """Tests formatting when the no_findings flag is True."""
-    critique_data = {
-        'final_assessment': 'Should be ignored.',
-        'points': [{'area': 'Ignore', 'critique': 'Ignore', 'severity': 'Ignore'}],
-        'no_findings': True
+    assert "# Critique Assessment Report" in report
+    assert "**Generated:** 2024-01-02 15:30:00" in report
+    assert "## Overall Judge Summary" in report
+    assert "Comprehensive review summarised." in report
+    assert "- **Final Judge Score:** 95/100" in report
+    assert "- **Expert Arbiter Score:** 82/100" in report
+    assert "**Confidence Delta:** +0.10" in report
+    assert "* **Claim:** Primary issue" in report
+    assert "- **Severity:** high" in report
+    assert "Resolved" in report
+    assert "--- End of Report ---" in report
+
+    assert captured_calls, "Expected judge API invocation"
+    kwargs = captured_calls[0][1]
+    assert kwargs["is_structured"] is True
+    prompt = kwargs["prompt_template"]
+    assert PEER_REVIEW_ENHANCEMENT.strip() in prompt
+    context = kwargs["context"]
+    trees = json.loads(context["adjusted_critique_trees_json"])
+    assert trees[0]["agent_style"] == "AgentA"
+
+
+def test_format_output_handles_agent_error_and_incomplete_trees(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Error annotations and malformed trees should still render informative output."""
+
+    judge_payload = {
+        "judge_summary_text": "Summary.",
+        "judge_overall_score": 75,
+        "judge_score_justification": "Adequate.",
     }
-    output = format_critique_output(critique_data)
+    _, fake_call = _stub_call_with_retry(judge_payload)
+    monkeypatch.setattr(output_formatter, "call_with_retry", fake_call)
 
-    assert "=== CRITIQUE ASSESSMENT REPORT ===" in output
-    assert "ANALYSIS COMPLETE. NO SIGNIFICANT POINTS FOR IMPROVEMENT IDENTIFIED." in output
-    assert "OVERALL ASSESSMENT:" not in output
-    assert "IDENTIFIED POINTS:" not in output
-    assert "=== END OF REPORT ===" in output
-
-def test_format_findings_but_empty_points():
-    """Tests formatting edge case: no_findings is False but points list is empty."""
     critique_data = {
-        'final_assessment': 'Assessment without specific points.',
-        'points': [],
-        'no_findings': False
-    }
-    output = format_critique_output(critique_data)
-
-    assert "=== CRITIQUE ASSESSMENT REPORT ===" in output
-    assert "OVERALL ASSESSMENT:" in output
-    assert "- Assessment without specific points." in output
-    assert "IDENTIFIED POINTS:" not in output # Check the specific message for this case
-    assert "- No specific points were detailed despite findings being indicated." in output
-    assert "=== END OF REPORT ===" in output
-    assert "NO SIGNIFICANT POINTS" not in output
-
-def test_format_missing_keys_in_points():
-    """Tests formatting robustness if point dictionaries miss keys."""
-    critique_data = {
-        'final_assessment': 'Assessment with partial points.',
-        'points': [
-            {'critique': 'Only critique provided', 'severity': 'Medium'}, # Missing area
-            {'area': 'Area Only', 'severity': 'Low', 'confidence': 0.6} # Missing critique
+        "adjusted_critique_trees": [
+            {"agent_style": "ErrorAgent", "error": "timeout"},
+            {"agent_style": "EmptyTreeAgent", "critique_tree": "  "},
+            {"agent_style": "MissingTreeAgent", "critique_tree": None},
         ],
-        'no_findings': False
+        "arbitration_adjustments": [],
+        "score_metrics": {},
     }
-    output = format_critique_output(critique_data)
 
-    assert "=== CRITIQUE ASSESSMENT REPORT ===" in output
-    assert "OVERALL ASSESSMENT:" in output
-    assert "- Assessment with partial points." in output
-    assert "IDENTIFIED POINTS:" in output
-    assert "1. AREA: N/A" in output # Check default value
-    assert "SEVERITY: Medium" in output # Confidence not present, shouldn't show
-    assert "(Confidence:" not in output.splitlines()[6] # Check confidence specifically absent
-    assert "CRITIQUE: Only critique provided" in output
-    assert "2. AREA: Area Only" in output
-    assert "SEVERITY: Low (Confidence: 0.60)" in output # Confidence present, should show
-    assert "CRITIQUE: N/A" in output # Check default value
-    assert "=== END OF REPORT ===" in output
+    report = output_formatter.format_critique_output(
+        critique_data,
+        original_content="Original",
+        config={},
+        peer_review=False,
+    )
 
-def test_format_missing_assessment_key():
-    """Tests formatting robustness if final_assessment key is missing."""
+    assert "Error during critique" in report
+    assert "Critique terminated early" in report
+    assert "No valid critique tree" in report
+
+
+def test_format_critique_output_handles_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Errors from the provider should degrade gracefully."""
+
+    def _raise(*_: Any, **__: Any) -> Tuple[dict, str]:
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(output_formatter, "call_with_retry", _raise)
+
     critique_data = {
-        # 'final_assessment': 'Missing',
-        'points': [{'area': 'A', 'critique': 'C', 'severity': 'S'}],
-        'no_findings': False
+        "adjusted_critique_trees": [],
+        "arbitration_adjustments": [],
+        "score_metrics": {},
     }
-    output = format_critique_output(critique_data)
-    assert "=== CRITIQUE ASSESSMENT REPORT ===" in output
-    assert "OVERALL ASSESSMENT:" in output
-    assert "- Assessment data unavailable." in output # Check default value
-    assert "IDENTIFIED POINTS:" in output
-    assert "=== END OF REPORT ===" in output
+
+    result = output_formatter.format_critique_output(
+        critique_data,
+        original_content="Original",
+        config={},
+        peer_review=False,
+    )
+
+    assert "Error generating Judge summary" in result
+    assert "No critique data available" in result
+
+
+def test_format_critique_node_nested_structure() -> None:
+    """The recursive formatter should produce nested bullet lists."""
+
+    node = {
+        "claim": "Top level",
+        "severity": "medium",
+        "confidence": 0.75,
+        "sub_critiques": [
+            {
+                "claim": "Child",
+                "severity": "low",
+                "confidence": 0.6,
+                "sub_critiques": [],
+                "concession": "Improved",
+            }
+        ],
+        "concession": "None",
+    }
+
+    lines = output_formatter.format_critique_node(node)
+
+    assert lines[0].startswith("* **Claim:** Top level")
+    assert any("- **Claim:** Child" in line for line in lines)
+    assert any("Concession" in line for line in lines)
+
+
+def test_format_output_without_adjustments(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When no adjustments are present the summary should state this explicitly."""
+
+    payload = {
+        "judge_summary_text": "All good.",
+        "judge_overall_score": 88,
+        "judge_score_justification": "Sound reasoning.",
+    }
+    _, fake_call = _stub_call_with_retry(payload)
+    monkeypatch.setattr(output_formatter, "call_with_retry", fake_call)
+
+    critique_data = {
+        "adjusted_critique_trees": [],
+        "arbitration_adjustments": [],
+        "score_metrics": {},
+    }
+
+    report = output_formatter.format_critique_output(
+        critique_data,
+        original_content="Original",
+        config={},
+        peer_review=False,
+    )
+
+    assert "provided no specific adjustments" in report
+
+
+def test_generate_judge_summary_handles_missing_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Missing prompt file should surface a helpful error message."""
+
+    def _failing_open(*args: Any, **kwargs: Any):
+        raise FileNotFoundError("missing")
+
+    monkeypatch.setattr("builtins.open", _failing_open)
+
+    summary, score, justification = output_formatter.generate_judge_summary_and_score(
+        "Original text",
+        [],
+        {},
+        {},
+        peer_review=False,
+    )
+
+    assert "prompt file not found" in summary
+    assert score is None
+    assert justification == "N/A"
+
+
+def test_generate_judge_summary_invalid_structure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unexpected payloads should return a structured error message."""
+
+    def _fake_call(**_: Any) -> Tuple[Dict[str, Any], str]:
+        return {"unexpected": "payload"}, "mock"
+
+    monkeypatch.setattr(output_formatter, "call_with_retry", _fake_call)
+
+    summary, score, justification = output_formatter.generate_judge_summary_and_score(
+        "Original",
+        [],
+        {},
+        {},
+        peer_review=False,
+    )
+
+    assert summary == "Error: Invalid Judge result structure."
+    assert score is None
+    assert justification == "N/A"
+
+
+def test_output_formatter_main_entrypoint(capsys: pytest.CaptureFixture[str]) -> None:
+    """Executing the module as a script should emit its informational message."""
+
+    sys.modules.pop("src.output_formatter", None)
+    runpy.run_module("src.output_formatter", run_name="__main__")
+
+    captured = capsys.readouterr()
+    assert "Direct execution of output_formatter.py example is limited." in captured.out
+

@@ -10,6 +10,7 @@ import logging
 import sys
 import unittest
 from pathlib import Path
+from typing import Any, Dict
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -145,7 +146,7 @@ class TestContentAssessor(unittest.TestCase):
         ]
         
         points = self.assessor._validate_and_format_points(test_result)
-        
+
         # Verify points were formatted correctly
         self.assertEqual(len(points), 2)
         self.assertEqual(points[0]['point'], "First point as string")
@@ -154,3 +155,219 @@ class TestContentAssessor(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DummyArxivService:
+    def __init__(self, cache_dir: str) -> None:
+        self.cache_dir = cache_dir
+        self.registered: list[tuple[str, str, float]] = []
+        self.updated_paths: list[str] = []
+        self.raise_on_update: bool = False
+        self.references_map: dict[str, list[dict[str, Any]]] = {}
+
+    def get_references_for_content(self, point: str, max_results: int, domains: Any = None):
+        return self.references_map.get(point, [])
+
+    def register_reference_for_agent(self, agent_name: str, paper_id: str, relevance_score: float) -> None:
+        self.registered.append((agent_name, paper_id, relevance_score))
+
+    def update_latex_bibliography(self, path: str) -> bool:
+        if self.raise_on_update:
+            raise RuntimeError("boom")
+        self.updated_paths.append(path)
+        return True
+
+
+def test_attach_arxiv_references_skips_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    assessor = ContentAssessor()
+    assessor.set_logger(logger)
+
+    points = [{"id": "1", "point": "Some content"}]
+    config = {"arxiv": {"enabled": False}}
+
+    with patch("src.content_assessor.ArxivReferenceService") as mock_service:
+        assessor._attach_arxiv_references(points, "body", config)
+
+    mock_service.assert_not_called()
+
+
+def test_extract_points_attaches_references_and_updates_bibliography(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    assessor = ContentAssessor()
+    assessor.set_logger(logger)
+
+    sample_points = {
+        "points": [
+            {"id": "p1", "point": "Relevant findings about physics"},
+            {"id": "p2", "point": "Short"},
+        ]
+    }
+
+    def fake_call(prompt_template: str, context: Dict[str, Any], config: Dict[str, Any], is_structured: bool):
+        return sample_points, "mock"
+
+    arxiv_service = DummyArxivService(cache_dir="cache")
+    arxiv_service.references_map["Relevant findings about physics"] = [
+        {
+            "id": "arxiv:1234",
+            "title": "Physics Paper",
+            "authors": ["Doe"],
+            "summary": "Detailed study",
+            "arxiv_url": "http://example.com",
+            "published": "2024-01-01",
+        }
+    ]
+
+    def service_factory(cache_dir: str):
+        assert cache_dir == "custom-cache"
+        return arxiv_service
+
+    latex_output = tmp_path / "latex"
+    config = {
+        "api": {"primary_provider": "openai"},
+        "arxiv": {"enabled": True, "cache_dir": "custom-cache"},
+        "latex": {
+            "output_dir": str(latex_output),
+            "output_filename": "critique",
+        },
+    }
+
+    monkeypatch.setattr("src.content_assessor.call_with_retry", fake_call)
+    monkeypatch.setattr("src.content_assessor.ArxivReferenceService", service_factory)
+
+    points = assessor.extract_points("Document", config)
+
+    assert len(points) == 2
+    assert "references" in points[0]
+    assert arxiv_service.registered[0][0] == "ContentAssessor"
+    bibliography = latex_output / "critique_bibliography.bib"
+    assert arxiv_service.updated_paths == [str(bibliography)]
+
+
+def test_attach_arxiv_reference_errors_are_logged(caplog: pytest.LogCaptureFixture) -> None:
+    assessor = ContentAssessor()
+    assessor.set_logger(logger)
+
+    broken_service = DummyArxivService(cache_dir="cache")
+    broken_service.raise_on_update = True
+
+    def service_factory(cache_dir: str) -> DummyArxivService:
+        return broken_service
+
+    config = {
+        "arxiv": {"enabled": True},
+        "latex": {"output_dir": "out", "output_filename": "critique"},
+    }
+
+    monkeypatcher = patch("src.content_assessor.ArxivReferenceService", service_factory)
+
+    with monkeypatcher:
+        with patch("src.content_assessor.call_with_retry", return_value=({"points": []}, "model")):
+            with caplog.at_level(logging.ERROR):
+                assessor._attach_arxiv_references(
+                    [{"id": "p1", "point": "Relevant findings"}],
+                    "Content",
+                    config,
+                )
+
+    assert "Error updating bibliography" in caplog.text
+
+
+def test_attach_arxiv_references_warns_when_update_fails(caplog: pytest.LogCaptureFixture) -> None:
+    assessor = ContentAssessor()
+    assessor.set_logger(logger)
+
+    service = DummyArxivService(cache_dir="cache")
+    service.raise_on_update = False
+
+    def service_factory(*_args: Any, **_kwargs: Any) -> DummyArxivService:
+        return service
+
+    config = {
+        "arxiv": {"enabled": True},
+        "latex": {"output_dir": "latex", "output_filename": "critique"},
+    }
+
+    service.update_latex_bibliography = lambda _path: False
+
+    with patch("src.content_assessor.ArxivReferenceService", service_factory):
+        with patch("src.content_assessor.call_with_retry", return_value=({"points": []}, "model")):
+            with caplog.at_level(logging.WARNING):
+                assessor._attach_arxiv_references(
+                    [{"id": "p1", "point": "Relevant findings in physics"}],
+                    "Content",
+                    config,
+                )
+
+    assert "Failed to update LaTeX bibliography" in caplog.text
+
+
+def test_attach_arxiv_references_handles_service_failure(caplog: pytest.LogCaptureFixture) -> None:
+    assessor = ContentAssessor()
+    assessor.set_logger(logger)
+
+    def broken_service(_cache_dir: str):  # pragma: no cover - used for raising path only
+        raise RuntimeError("service unavailable")
+
+    config = {"arxiv": {"enabled": True}}
+
+    with patch("src.content_assessor.ArxivReferenceService", side_effect=broken_service):
+        with patch("src.content_assessor.call_with_retry", return_value=({"points": []}, "model")):
+            with caplog.at_level(logging.ERROR):
+                assessor._attach_arxiv_references(
+                    [{"id": "p1", "point": "Content"}],
+                    "Content",
+                    config,
+                )
+
+    assert "Error in ArXiv reference lookup" in caplog.text
+
+
+def test_attach_arxiv_references_logs_when_points_missing(caplog: pytest.LogCaptureFixture) -> None:
+    assessor = ContentAssessor()
+    assessor.set_logger(logger)
+
+    with patch("src.content_assessor.ArxivReferenceService") as mock_service:
+        with caplog.at_level(logging.DEBUG):
+            assessor._attach_arxiv_references([], "Body", {"arxiv": {"enabled": True}})
+
+    mock_service.assert_not_called()
+    assert "No points to attach ArXiv references" in caplog.text
+
+
+def test_validate_and_format_points_logs_validation_error(caplog: pytest.LogCaptureFixture) -> None:
+    assessor = ContentAssessor()
+    assessor.set_logger(logger)
+
+    def broken_parse(_json: str) -> Any:
+        raise RuntimeError("invalid")
+
+    with patch.object(assessor, "_repair_and_parse_json", side_effect=broken_parse):
+        with patch.object(assessor, "_extract_points_from_text", side_effect=RuntimeError("boom")):
+            with caplog.at_level(logging.ERROR):
+                points = assessor._validate_and_format_points("{broken json")
+
+    assert points[0]["id"] == "point-fallback"
+    assert "Error validating points" in caplog.text
+
+
+def test_extract_points_from_text_logs_exception(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    assessor = ContentAssessor()
+    assessor.set_logger(logger)
+
+    class BrokenReModule:
+        MULTILINE = 0
+
+        @staticmethod
+        def findall(*_args: Any, **_kwargs: Any):
+            raise RuntimeError("regex failure")
+
+    monkeypatch.setitem(sys.modules, "re", BrokenReModule())
+
+    with caplog.at_level(logging.ERROR):
+        points = assessor._extract_points_from_text("1. point")
+
+    assert points == []
+    assert "Error extracting points from text" in caplog.text
+
+    # Restore the real re module for subsequent tests
+    monkeypatch.setitem(sys.modules, "re", __import__("re"))

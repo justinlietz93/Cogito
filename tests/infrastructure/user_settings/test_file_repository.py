@@ -1,47 +1,84 @@
 from pathlib import Path
-import sys
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
+import json
 import pytest
 
-from src.domain.user_settings.models import UserSettings
-from src.infrastructure.user_settings.file_repository import JsonFileSettingsRepository
+from src.infrastructure.user_settings.file_repository import (
+    JsonFileSettingsRepository,
+    default_settings_path,
+)
 
 
-def test_load_returns_default_when_file_missing(tmp_path: Path) -> None:
-    repo = JsonFileSettingsRepository(tmp_path / "settings.json")
-    loaded = repo.load()
-    assert isinstance(loaded, UserSettings)
-    assert loaded.api_keys == {}
+def test_load_returns_default_when_missing(tmp_path: Path) -> None:
+    repo = JsonFileSettingsRepository(path=tmp_path / "settings.json")
+    settings = repo.load()
+    assert settings == settings.__class__()
 
 
-def test_roundtrip_persists_all_fields(tmp_path: Path) -> None:
+def test_load_raises_on_invalid_json(tmp_path: Path) -> None:
     path = tmp_path / "settings.json"
-    repo = JsonFileSettingsRepository(path)
-    settings = UserSettings(
-        default_input_path="/input",
-        default_output_dir="/output",
-        preferred_provider="openai",
-        peer_review_default=True,
-        scientific_mode_default=True,
-        api_keys={"openai": "abc123"},
-        recent_files=["/input/file.txt"],
-        config_path="/cfg.json",
-    )
-    repo.save(settings)
+    path.write_text("not-json", encoding="utf-8")
+    repo = JsonFileSettingsRepository(path=path)
 
-    loaded = JsonFileSettingsRepository(path).load()
-    assert loaded.default_input_path == "/input"
-    assert loaded.api_keys == {"openai": "abc123"}
-    assert loaded.recent_files == ["/input/file.txt"]
-
-
-def test_invalid_json_raises(tmp_path: Path) -> None:
-    path = tmp_path / "settings.json"
-    path.write_text("{not valid}", encoding="utf-8")
-    repo = JsonFileSettingsRepository(path)
     with pytest.raises(ValueError):
         repo.load()
+
+
+def test_save_writes_file(tmp_path: Path) -> None:
+    repo = JsonFileSettingsRepository(path=tmp_path / "settings.json")
+    settings = repo.load()
+    settings.theme = "dark"
+    repo.save(settings)
+
+    data = json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
+    assert data["theme"] == "dark"
+
+
+def test_load_returns_saved_settings(tmp_path: Path) -> None:
+    repo = JsonFileSettingsRepository(path=tmp_path / "settings.json")
+    settings = repo.load()
+    settings.theme = "light"
+    repo.save(settings)
+
+    reloaded = repo.load()
+    assert reloaded.theme == "light"
+
+
+def test_load_handles_missing_file_after_exists_check(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "settings.json"
+    path.write_text("{}", encoding="utf-8")
+    repo = JsonFileSettingsRepository(path=path)
+
+    original_open = Path.open
+
+    def fail_open(self: Path, *args, **kwargs):  # type: ignore[override]
+        if self == path:
+            raise FileNotFoundError("removed")
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", fail_open)
+
+    settings = repo.load()
+    assert settings == settings.__class__()
+
+
+def test_default_settings_path_respects_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    custom = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(custom))
+    expected = custom / "cogito" / "settings.json"
+    assert default_settings_path() == expected
+
+
+def test_repository_uses_default_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    target = tmp_path / "home" / ".config" / "cogito" / "settings.json"
+
+    def fake_home() -> Path:
+        return tmp_path / "home"
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", "")
+    monkeypatch.setattr(Path, "home", staticmethod(fake_home))
+
+    repo = JsonFileSettingsRepository()
+    repo.save(repo.load())
+
+    assert target.exists()

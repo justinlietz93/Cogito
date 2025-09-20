@@ -1,5 +1,6 @@
 # tests/test_reasoning_agent.py
 
+import logging
 import pytest
 import os
 import sys
@@ -8,8 +9,26 @@ from unittest.mock import patch, MagicMock
 # Adjust path to import from the new src directory
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.reasoning_agent import (
-    AristotleAgent, DescartesAgent, KantAgent, LeibnizAgent, PopperAgent, RussellAgent,
-    PROMPT_DIR # Import base path for verification
+    AristotleAgent,
+    BoundaryConditionAnalystAgent,
+    DescartesAgent,
+    EmpiricalValidationAnalystAgent,
+    ExpertArbiterAgent,
+    ExpertArbiterBaseAgent,
+    FirstPrinciplesAnalystAgent,
+    KantAgent,
+    LeibnizAgent,
+    LogicalStructureAnalystAgent,
+    PEER_REVIEW_ENHANCEMENT,
+    PROMPT_DIR,
+    ReasoningAgent,
+    RussellAgent,
+    SCIENTIFIC_PROMPT_DIR,
+    SCIENTIFIC_PEER_REVIEW_ENHANCEMENT,
+    ScientificExpertArbiterAgent,
+    SystemsAnalystAgent,
+    OptimizationAnalystAgent,
+    PopperAgent,
 )
 
 # List of agent classes and their expected prompt filenames
@@ -22,6 +41,15 @@ AGENT_TEST_PARAMS = [
     (RussellAgent, 'critique_russell.txt'),
 ]
 
+SCIENTIFIC_AGENT_TEST_PARAMS = [
+    (SystemsAnalystAgent, 'systems_analyst.txt'),
+    (FirstPrinciplesAnalystAgent, 'first_principles_analyst.txt'),
+    (BoundaryConditionAnalystAgent, 'boundary_condition_analyst.txt'),
+    (OptimizationAnalystAgent, 'optimization_analyst.txt'),
+    (EmpiricalValidationAnalystAgent, 'empirical_validation_analyst.txt'),
+    (LogicalStructureAnalystAgent, 'logical_structure_analyst.txt'),
+]
+
 # --- Fixtures ---
 
 @pytest.fixture(params=AGENT_TEST_PARAMS)
@@ -29,6 +57,30 @@ def agent_instance(request):
     """Fixture to create an instance of each philosopher agent."""
     agent_class, _ = request.param
     return agent_class()
+
+
+class StubAgent(ReasoningAgent):
+    """Minimal reasoning agent used to isolate critique behaviours."""
+
+    def __init__(self, directives: str = "BASE DIRECTIVES"):
+        super().__init__("StubAgent")
+        self._directives = directives
+
+    def get_style_directives(self) -> str:
+        return self._directives
+
+
+def test_reasoning_agent_base_method_can_be_invoked_via_super() -> None:
+    class ProxyAgent(ReasoningAgent):
+        def __init__(self) -> None:
+            super().__init__("ProxyAgent")
+
+        def get_style_directives(self) -> str:
+            return super().get_style_directives()  # type: ignore[return-value]
+
+    proxy = ProxyAgent()
+
+    assert proxy.get_style_directives() is None
 
 @pytest.fixture
 def mock_tree_execution():
@@ -90,6 +142,30 @@ def test_get_style_directives_file_not_found(agent_instance):
     # Restore original path for other tests
     agent_instance.prompt_filepath = original_path
     agent_instance._directives_cache = None # Clear cache again
+
+
+def test_scientific_agents_use_scientific_prompt_directory():
+    """Scientific agents should resolve prompt files within the scientific prompt subtree."""
+
+    for agent_class, filename in SCIENTIFIC_AGENT_TEST_PARAMS:
+        agent = agent_class()
+        expected_suffix = os.path.join('scientific', filename)
+        assert agent.prompt_filepath.endswith(expected_suffix)
+        assert SCIENTIFIC_PROMPT_DIR in agent.prompt_filepath
+        assert agent.style == agent_class.__name__.replace('Agent', '')
+
+
+def test_stub_agent_set_logger_updates_logger(caplog):
+    """Agents should adopt the injected logger and emit an initialization message."""
+
+    stub_agent = StubAgent()
+    custom_logger = logging.getLogger('stub-agent-test')
+
+    with caplog.at_level('INFO'):
+        stub_agent.set_logger(custom_logger)
+
+    assert stub_agent.logger is custom_logger
+    assert any('Agent logger initialized for StubAgent' in message for message in caplog.messages)
 
 def test_critique_method_calls_tree(agent_instance, mock_tree_execution):
     """Tests that the critique method calls execute_reasoning_tree."""
@@ -268,3 +344,319 @@ def test_self_critique_handles_conflicting_peer_evidence(agent_instance):
     result = agent_instance.self_critique(own_critique, other_critiques, config={})
 
     assert result['adjustments'] == []
+
+
+def test_stub_agent_applies_peer_review_and_assigned_points():
+    """Peer-review mode should append enhancements and surface assigned points."""
+
+    stub_agent = StubAgent()
+    expected_tree = {
+        'id': 'node-1',
+        'claim': 'Delegated claim',
+        'evidence': 'Synthesised evidence',
+        'confidence': 0.91,
+        'severity': 'High',
+        'sub_critiques': [],
+    }
+
+    with patch('src.reasoning_agent.execute_reasoning_tree', return_value=expected_tree) as mock_tree:
+        assigned_points = [{'id': 'focus-1', 'point': 'Analyse fairness constraints'}]
+        result = stub_agent.critique(
+            content='Content under review' * 10,
+            config={'goal': 'Unit test goal'},
+            peer_review=True,
+            assigned_points=assigned_points,
+        )
+
+    mock_tree.assert_called_once()
+    call_kwargs = mock_tree.call_args.kwargs
+    assert call_kwargs['assigned_points'] is assigned_points
+    style_directives = call_kwargs['style_directives']
+    assert stub_agent.get_style_directives() in style_directives
+    assert PEER_REVIEW_ENHANCEMENT.strip().splitlines()[0] in style_directives
+    assert '--- ASSIGNED POINTS ENHANCEMENT ---' in style_directives
+    assert 'Analyse fairness constraints' in style_directives
+    assert result['critique_tree'] == expected_tree
+
+
+def test_stub_agent_handles_prompt_load_error():
+    """Prompt loading failures should surface an explanatory error payload."""
+
+    stub_agent = StubAgent(directives='ERROR: missing directives')
+
+    with patch('src.reasoning_agent.execute_reasoning_tree') as mock_tree:
+        result = stub_agent.critique('Long enough content to avoid pruning' * 3, config={})
+
+    mock_tree.assert_not_called()
+    assert result['agent_style'] == 'StubAgent'
+    assert 'Failed to load style directives' in result['error']
+
+
+def test_self_critique_returns_empty_when_tree_missing(agent_instance):
+    """Missing critique trees should produce no adjustments."""
+
+    result = agent_instance.self_critique({'agent_style': agent_instance.style}, other_critiques=[], config={})
+
+    assert result['adjustments'] == []
+
+
+def test_self_critique_scopes_peer_consensus_to_assigned_points(agent_instance):
+    """Only peers addressing the same assigned point should influence adjustments."""
+
+    own_critique = {
+        'agent_style': agent_instance.style,
+        'critique_tree': {
+            'id': 'scoped-claim',
+            'confidence': 0.3,
+            'severity': 'low',
+            'evidence': 'Detailed analysis backing the concern.' * 8,
+            'concession': '',
+            'sub_critiques': [],
+            'assigned_point_id': 'focus-1',
+        },
+    }
+
+    other_critiques = [
+        {
+            'agent_style': 'AlignedPeerA',
+            'critique_tree': {
+                'id': 'aligned-a',
+                'confidence': 0.9,
+                'severity': 'high',
+                'evidence': 'Shared focus with substantial empirical backing.',
+                'sub_critiques': [],
+                'assigned_point_id': 'focus-1',
+            },
+        },
+        {
+            'agent_style': 'AlignedPeerB',
+            'critique_tree': {
+                'id': 'aligned-b',
+                'confidence': 0.88,
+                'severity': 'high',
+                'evidence': 'Additional targeted experiments confirm the issue.',
+                'sub_critiques': [],
+                'assigned_point_id': 'focus-1',
+            },
+        },
+        {
+            'agent_style': 'NeutralPeer',
+            'critique_tree': {
+                'id': 'neutral',
+                'confidence': 0.5,
+                'severity': 'medium',
+                'evidence': 'General observations relevant to multiple findings.',
+                'sub_critiques': [],
+                'assigned_point_id': None,
+            },
+        },
+        {
+            'agent_style': 'UnrelatedPeerA',
+            'critique_tree': {
+                'id': 'other-a',
+                'confidence': 0.95,
+                'severity': 'critical',
+                'evidence': 'Focus on a separate assigned point.',
+                'sub_critiques': [],
+                'assigned_point_id': 'different-point',
+            },
+        },
+        {
+            'agent_style': 'UnrelatedPeerB',
+            'critique_tree': {
+                'id': 'other-b',
+                'confidence': 0.97,
+                'severity': 'critical',
+                'evidence': 'Another unrelated focus area.',
+                'sub_critiques': [],
+                'assigned_point_id': 'different-point',
+            },
+        },
+    ]
+
+    result = agent_instance.self_critique(own_critique, other_critiques, config={'self_critique': {'minimum_delta': 0.01}})
+
+    adjustments = {adj['target_claim_id']: adj for adj in result['adjustments']}
+    scoped_adjustment = adjustments['scoped-claim']
+    assert scoped_adjustment['confidence_delta'] == pytest.approx(0.35, abs=1e-3)
+    reasoning = scoped_adjustment['reasoning']
+    assert 'Adjusted up toward peer confidence average' in reasoning
+    assert 'Peers reported higher severity (High).' in reasoning
+    assert 'Critical' not in reasoning
+
+
+def test_arbitrate_scientific_peer_review(monkeypatch):
+    """Scientific arbiters should request peer-review enhancements and structured output."""
+
+    arbiter = ScientificExpertArbiterAgent()
+    monkeypatch.setattr(arbiter, 'get_style_directives', MagicMock(return_value='BASE ARBITER DIRECTIVES'))
+
+    recorded = {}
+
+    def _fake_call(prompt_template, context, config, is_structured):
+        recorded['prompt_template'] = prompt_template
+        recorded['context'] = context
+        recorded['is_structured'] = is_structured
+        return (
+            {
+                'adjustments': [{'target_claim_id': 'root', 'confidence_delta': -0.1}],
+                'arbiter_overall_score': 0.72,
+                'arbiter_score_justification': 'Calibration rationale.',
+            },
+            'arbiter-model',
+        )
+
+    with patch('src.reasoning_agent.call_with_retry', side_effect=_fake_call) as mock_call:
+        result = arbiter.arbitrate(
+            original_content='Original content under review',
+            initial_critiques=[{'agent_style': 'Test', 'critique_tree': {'id': 'root'}}],
+            config={'goal': 'Arbitration'},
+            peer_review=True,
+        )
+
+    mock_call.assert_called_once()
+    assert recorded['is_structured'] is True
+    assert 'scientific_critiques_json' in recorded['context']
+    assert 'philosophical_critiques_json' not in recorded['context']
+    assert SCIENTIFIC_PEER_REVIEW_ENHANCEMENT.strip().splitlines()[0] in recorded['prompt_template']
+    assert 'BASE ARBITER DIRECTIVES' in recorded['prompt_template']
+    assert result['agent_style'] == 'ScientificExpertArbiter'
+    assert result['adjustments'] == [{'target_claim_id': 'root', 'confidence_delta': -0.1}]
+    assert result['arbiter_overall_score'] == 0.72
+    assert result['arbiter_score_justification'] == 'Calibration rationale.'
+
+
+def test_arbitrate_handles_json_serialisation_errors(monkeypatch):
+    """Non-serialisable critiques should surface a clear error payload."""
+
+    arbiter = ExpertArbiterAgent()
+    monkeypatch.setattr(arbiter, 'get_style_directives', MagicMock(return_value='BASE ARBITER DIRECTIVES'))
+
+    result = arbiter.arbitrate(
+        original_content='Original content',
+        initial_critiques=[{'agent_style': 'A', 'critique_tree': {'id': 'root'}, 'bad': {'unserialisable'}}],
+        config={},
+        peer_review=False,
+    )
+
+    assert result['adjustments'] == []
+    assert result['arbiter_overall_score'] is None
+    assert 'Failed to serialize critiques to JSON' in result['error']
+
+
+def test_arbitrate_handles_invalid_structured_response(monkeypatch):
+    """Unexpected arbitration payloads should report a validation error."""
+
+    arbiter = ExpertArbiterAgent()
+    monkeypatch.setattr(arbiter, 'get_style_directives', MagicMock(return_value='BASE ARBITER DIRECTIVES'))
+
+    with patch('src.reasoning_agent.call_with_retry', return_value=({'unexpected': True}, 'arbiter-model')):
+        result = arbiter.arbitrate(
+            original_content='Original content',
+            initial_critiques=[{'agent_style': 'A', 'critique_tree': {'id': 'root'}}],
+            config={},
+        )
+
+    assert result['error'] == 'Invalid arbitration result structure'
+    assert result['adjustments'] == []
+    assert result['arbiter_overall_score'] is None
+
+
+def test_arbitrate_handles_call_failures(monkeypatch):
+    """Provider failures should be caught and returned as structured errors."""
+
+    arbiter = ExpertArbiterAgent()
+    monkeypatch.setattr(arbiter, 'get_style_directives', MagicMock(return_value='BASE ARBITER DIRECTIVES'))
+
+    with patch('src.reasoning_agent.call_with_retry', side_effect=RuntimeError('upstream failure')):
+        result = arbiter.arbitrate(
+            original_content='Original content',
+            initial_critiques=[{'agent_style': 'A', 'critique_tree': {'id': 'root'}}],
+            config={},
+        )
+
+    assert 'Arbitration failed: upstream failure' in result['error']
+    assert result['adjustments'] == []
+    assert result['arbiter_overall_score'] is None
+
+
+def test_expert_arbiter_get_style_directives_caches_content(tmp_path):
+    """Arbiter directives should be cached after the first read."""
+
+    prompt_file = tmp_path / 'arbiter_prompt.txt'
+    prompt_file.write_text('ARB PROMPT', encoding='utf-8')
+
+    arbiter = ExpertArbiterBaseAgent('TestArbiter', str(prompt_file))
+
+    first_read = arbiter.get_style_directives()
+    assert first_read == 'ARB PROMPT'
+
+    prompt_file.unlink()
+    assert arbiter.get_style_directives() == 'ARB PROMPT'
+
+
+def test_expert_arbiter_get_style_directives_handles_missing_file(tmp_path, caplog):
+    """Missing arbiter prompts should return an error marker."""
+
+    arbiter = ExpertArbiterBaseAgent('TestArbiter', str(tmp_path / 'missing.txt'))
+
+    with caplog.at_level('ERROR'):
+        directives = arbiter.get_style_directives()
+
+    assert directives.startswith('ERROR:')
+    assert any('Failed to read arbiter prompt file' in message for message in caplog.messages)
+
+
+def test_expert_arbiter_base_methods_raise(tmp_path):
+    """Base arbiter agents should not implement critique flows."""
+
+    arbiter = ExpertArbiterBaseAgent('TestArbiter', str(tmp_path / 'prompt.txt'))
+
+    with pytest.raises(NotImplementedError):
+        arbiter.critique('content', config={})
+
+    with pytest.raises(NotImplementedError):
+        arbiter.self_critique({}, [], config={})
+
+
+def test_arbitrate_handles_prompt_loading_error(monkeypatch):
+    """Prompt-loading failures should short-circuit arbitration."""
+
+    arbiter = ExpertArbiterAgent()
+    monkeypatch.setattr(arbiter, 'get_style_directives', MagicMock(return_value='ERROR: prompt missing'))
+
+    result = arbiter.arbitrate('Original content', [], config={})
+
+    assert result['error'] == 'ERROR: prompt missing'
+    assert result['adjustments'] == []
+    assert result['arbiter_overall_score'] is None
+
+
+def test_arbitrate_non_scientific_peer_review(monkeypatch):
+    """Philosophical arbiters should apply the peer-review enhancement."""
+
+    arbiter = ExpertArbiterAgent()
+    monkeypatch.setattr(arbiter, 'get_style_directives', MagicMock(return_value='BASE ARBITER DIRECTIVES'))
+
+    captured = {}
+
+    def _fake_call(prompt_template, context, config, is_structured):
+        captured['prompt_template'] = prompt_template
+        return (
+            {
+                'adjustments': [],
+                'arbiter_overall_score': 0.6,
+                'arbiter_score_justification': 'Balanced.',
+            },
+            'arbiter-model',
+        )
+
+    with patch('src.reasoning_agent.call_with_retry', side_effect=_fake_call):
+        arbiter.arbitrate(
+            original_content='Original content',
+            initial_critiques=[{'agent_style': 'A', 'critique_tree': {'id': 'root'}}],
+            config={},
+            peer_review=True,
+        )
+
+    assert PEER_REVIEW_ENHANCEMENT.strip().splitlines()[0] in captured['prompt_template']

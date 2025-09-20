@@ -11,14 +11,17 @@ import logging
 import platform
 from typing import Dict, Any, Optional, List, Tuple
 
+from src.latex.utils.windows_engine_finder import find_latex_engine_in_common_locations
+
 try:
     from src.config_loader import config_loader
-except ImportError:
+except ImportError:  # pragma: no cover - fallback for ad-hoc execution contexts
     # Handle case when running from different directory
-    import sys
-    import os.path
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../')))
-    from src.config_loader import config_loader
+    import sys  # pragma: no cover
+    import os.path  # pragma: no cover
+
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../')))  # pragma: no cover
+    from src.config_loader import config_loader  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
@@ -96,16 +99,26 @@ class LatexCompiler:
         # On Windows, try to find MiKTeX or TeX Live in common installation locations
         if platform.system() == 'Windows':
             print("Checking for LaTeX engines in common Windows installation locations...")
-            engine_path = self._find_latex_in_common_locations(self.latex_engine)
+            engine_path = find_latex_engine_in_common_locations(
+                self.latex_engine,
+                self.custom_miktex_path,
+                self.additional_search_paths,
+                logger,
+            )
             if engine_path:
                 print(f"Found LaTeX engine at {engine_path}")
                 # Store the full path to the engine for later use
                 self._engine_path = engine_path
                 return True, self.latex_engine
-                
+
             # Try alternatives in common locations
             for engine in alternatives:
-                engine_path = self._find_latex_in_common_locations(engine)
+                engine_path = find_latex_engine_in_common_locations(
+                    engine,
+                    self.custom_miktex_path,
+                    self.additional_search_paths,
+                    logger,
+                )
                 if engine_path:
                     print(f"Found alternative LaTeX engine '{engine}' at {engine_path}")
                     # Store the full path to the engine for later use
@@ -116,100 +129,6 @@ class LatexCompiler:
         print("No LaTeX engine found on the system")
         self._engine_path = None
         return False, self.latex_engine
-        
-    def _find_latex_in_common_locations(self, engine: str) -> Optional[str]:
-        """
-        Look for LaTeX engine in common installation locations on Windows.
-        
-        Args:
-            engine: The LaTeX engine to look for.
-            
-        Returns:
-            The full path to the engine executable if found, None otherwise.
-        """
-        if platform.system() != 'Windows':
-            return None
-            
-        # Get current username
-        username = os.environ.get('USERNAME', '')
-        
-        # Check custom MiKTeX path first if specified
-        if self.custom_miktex_path:
-            logger.info(f"Checking custom MiKTeX path: {self.custom_miktex_path}")
-            if os.path.exists(self.custom_miktex_path):
-                engine_path = os.path.join(self.custom_miktex_path, f"{engine}.exe")
-                if os.path.exists(engine_path) and os.path.isfile(engine_path):
-                    logger.info(f"Found LaTeX engine '{engine}' at custom path: {engine_path}")
-                    # Test if the engine works
-                    try:
-                        startupinfo = subprocess.STARTUPINFO()
-                        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                        result = subprocess.run(
-                            [engine_path, '--version'],
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            startupinfo=startupinfo,
-                            check=False,
-                            text=True
-                        )
-                        if result.returncode == 0:
-                            version_info = result.stdout.strip().split('\n')[0] if result.stdout else "Unknown version"
-                            print(f"Successfully tested LaTeX engine: {version_info}")
-                            return engine_path
-                    except Exception as e:
-                        print(f"Error testing LaTeX engine at {engine_path}: {e}")
-                        return None
-            else:
-                logger.warning(f"Custom MiKTeX path doesn't exist: {self.custom_miktex_path}")
-                
-        # Common MiKTeX installation paths
-        common_paths = [
-            # MiKTeX 25.x paths
-            f"C:\\Users\\{username}\\AppData\\Local\\Programs\\MiKTeX 25.3\\miktex\\bin\\x64",
-            f"C:\\Program Files\\MiKTeX 25.3\\miktex\\bin\\x64",
-            # Older MiKTeX paths
-            f"C:\\Users\\{username}\\AppData\\Local\\Programs\\MiKTeX\\miktex\\bin\\x64",
-            f"C:\\Users\\{username}\\AppData\\Local\\MiKTeX\\miktex\\bin\\x64",
-            f"C:\\Program Files\\MiKTeX\\miktex\\bin\\x64",
-            f"C:\\Program Files (x86)\\MiKTeX\\miktex\\bin",
-            # TeX Live installation paths
-            "C:\\texlive\\2023\\bin\\win32",
-            "C:\\texlive\\2024\\bin\\win32",
-            "C:\\texlive\\2023\\bin\\x64",
-            "C:\\texlive\\2024\\bin\\x64"
-        ]
-        
-        # Add any additional search paths from configuration
-        if self.additional_search_paths:
-            logger.info(f"Adding {len(self.additional_search_paths)} additional search paths from config")
-            common_paths.extend(self.additional_search_paths)
-        
-        # Check each path for the engine
-        for base_path in common_paths:
-            engine_path = os.path.join(base_path, f"{engine}.exe")
-            if os.path.exists(engine_path) and os.path.isfile(engine_path):
-                print(f"Found LaTeX engine '{engine}' at {engine_path}")
-                try:
-                    # Test if the engine actually works
-                    startupinfo = subprocess.STARTUPINFO()
-                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                    result = subprocess.run(
-                        [engine_path, '--version'],
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        startupinfo=startupinfo,
-                        check=False,
-                        text=True
-                    )
-                    if result.returncode == 0:
-                        version_info = result.stdout.strip().split('\n')[0] if result.stdout else "Unknown version"
-                        print(f"Successfully tested LaTeX engine: {version_info}")
-                        return engine_path
-                except Exception as e:
-                    print(f"Error testing LaTeX engine at {engine_path}: {e}")
-                    continue
-        
-        return None
         
     def _check_engine_available(self, engine: str) -> bool:
         """

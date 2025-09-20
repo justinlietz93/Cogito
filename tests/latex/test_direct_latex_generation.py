@@ -140,6 +140,48 @@ class TestDirectLatexGeneratorUnit(unittest.TestCase):
         self.assertIn("This was a quote.", latex)
         self.assertNotIn("> This was a quote.", latex) # Ensure '>' is removed
 
+    def test_code_block_handling(self):
+        """Code blocks should be wrapped in verbatim environment."""
+        md = """```
+print('hi')
+```
+After block
+"""
+        gen = DirectLatexGenerator(md)
+        latex = gen.generate_latex_document()
+        self.assertIn(r"\begin{verbatim}", latex)
+        self.assertIn("print('hi')", latex)
+        self.assertIn(r"\end{verbatim}", latex)
+        self.assertIn("After block", latex)
+
+    def test_consecutive_blank_lines_emit_single_paragraph(self):
+        """Multiple blank lines should collapse into a single paragraph break."""
+        md = "First paragraph.\n\n\nSecond paragraph."
+        gen = DirectLatexGenerator(md)
+        latex = gen.generate_latex_document()
+        self.assertIn("First paragraph.\n\\par\nSecond paragraph.", latex)
+
+    def test_process_content_body_deduplicates_paragraph_markers(self):
+        """Safety pass removes consecutive ``\\par`` entries from output."""
+        gen = DirectLatexGenerator("Line one\nLine two")
+        gen._process_line = lambda line: "\\par"  # type: ignore[assignment]
+
+        body = gen._process_content_body()
+
+        self.assertEqual(body, "\\par")
+
+    def test_process_line_ignores_whitespace_only(self):
+        """Whitespace-only lines return empty output during processing."""
+        gen = DirectLatexGenerator("Content")
+        self.assertEqual(gen._process_line("   "), "")
+
+    def test_skips_raw_markdown_header_residue(self):
+        """Lines that resemble escaped headers are dropped during processing."""
+        md = "\\# Residual header"
+        gen = DirectLatexGenerator(md)
+        latex = gen.generate_latex_document()
+        self.assertNotIn("\\# Residual header", latex)
+
     def test_paragraph_breaks(self):
         """Test handling of blank lines for paragraph breaks."""
         md = "Paragraph 1.\n\nParagraph 2."
@@ -227,7 +269,8 @@ class TestDirectLatexIntegration(unittest.TestCase):
         self.assertIn(r"Special chars: \% \& \$ \_ \# \{ \} \textasciitilde{} \textasciicircum{} \textbackslash{}", content)
         self.assertIn("Blockquote text.", content) # Blockquote '>' removed
         self.assertIn(r"Suggestion B with $\approx$ symbol.", content)
-        self.assertNotIn(r"\input{preamble.tex}", content) # Direct generator includes preamble inline
+        self.assertNotIn(r"\input{preamble.tex}", content) # Legacy include should not exist
+        self.assertNotIn(r"\input{preamble}", content) # Direct generator includes preamble inline
 
     def test_formatter_direct_conversion_disabled(self):
         """Test LatexFormatter uses standard path when direct conversion is False."""
@@ -251,7 +294,7 @@ class TestDirectLatexIntegration(unittest.TestCase):
             content = f.read()
 
         # Check for markers of standard template-based generation
-        self.assertIn(r"\input{preamble.tex}", content) # Standard templates use includes
+        self.assertIn(r"\input{preamble}", content) # Standard templates use includes
         # Standard converter might handle headings differently (e.g., numbered)
         # or might use different commands depending on the template.
         # Just check that it doesn't look exactly like the direct output.
@@ -280,7 +323,7 @@ class TestDirectLatexIntegration(unittest.TestCase):
             content = f.read()
 
         # Check for markers of standard template-based generation
-        self.assertIn(r"\input{preamble.tex}", content)
+        self.assertIn(r"\input{preamble}", content)
 
 
 if __name__ == '__main__':
