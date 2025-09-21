@@ -114,12 +114,12 @@ Instruction to Coding Agent: Use this checklist to create concrete tasks and imp
 
 ## 12) Performance & Limits
 
-- [ ] For large inputs, use a bounded chunk → summarize (map) → merge (reduce) pipeline:
-  - [ ] Split content into chunks by semantic boundaries with hard size caps; attach path/offset metadata.
-  - [ ] Run per‑chunk LLM passes (summaries/points) with item caps (e.g., `max_points_per_chunk`).
-  - [ ] Merge and deduplicate across chunks; select top‑K globally by salience/coverage.
-  - [ ] Optional final pass to normalize and fill gaps; keep total tokens within configured budget.
-- [ ] Keep memory bounded (no single giant prompt or whole‑corpus in memory at once); prefer streaming/iterative processing.
+- [x] For large inputs, use a bounded chunk → summarize (map) → merge (reduce) pipeline:
+  - [x] Split content into chunks by semantic boundaries with hard size caps; attach path/offset metadata.
+  - [x] Run per‑chunk LLM passes (summaries/points) with item caps (e.g., `max_points_per_chunk`).
+  - [x] Merge and deduplicate across chunks; select top‑K globally by salience/coverage.
+  - [x] Optional final pass to normalize and fill gaps; keep total tokens within configured budget.
+- [x] Keep memory bounded (no single giant prompt or whole‑corpus in memory at once); prefer streaming/iterative processing.
 
 ## 13) Acceptance Criteria
 

@@ -43,7 +43,7 @@ from ...application.preflight.ports import (
     PointExtractorGateway,
     QueryBuilderGateway,
 )
-from ...domain.preflight import ExtractionResult, QueryPlan
+from ...domain.preflight import ExtractedPoint, ExtractionResult, QueryPlan
 from ...pipeline_input import PipelineInput
 from ...providers import openai_client
 from ..timeouts import TimeoutConfig, get_timeout_config, operation_timeout
@@ -59,6 +59,30 @@ MINIMUM_CONTENT_CHARACTERS = 50
 
 JsonLike = Any
 ProviderCall = Callable[..., Tuple[JsonLike, str]]
+
+DEFAULT_CHUNK_MAX_CHARACTERS = 4000
+DEFAULT_CHUNK_OVERLAP_CHARACTERS = 200
+DEFAULT_CHUNK_MAX_POINTS_PER_CHUNK = 4
+
+
+@dataclass(frozen=True)
+class ChunkingSettings:
+    """Configuration describing how large pipeline inputs should be chunked."""
+
+    enabled: bool
+    max_characters: int
+    overlap_characters: int
+    max_points_per_chunk: Optional[int]
+
+
+@dataclass(frozen=True)
+class _PipelineChunk:
+    """Represents a single chunk of the original pipeline content."""
+
+    index: int
+    start_offset: int
+    end_offset: int
+    content: str
 
 
 def _format_bool(value: bool) -> str:
@@ -197,6 +221,279 @@ def _normalise_json_like(value: JsonLike) -> str:
         return json.dumps(value, ensure_ascii=False)
     except TypeError as exc:  # pragma: no cover - defensive branch
         raise RuntimeError("Provider returned a non-serialisable payload") from exc
+
+
+def _resolve_chunking_settings(config: Mapping[str, Any]) -> ChunkingSettings:
+    """Resolve chunking settings from the provided configuration mapping."""
+
+    preflight = config.get("preflight") if isinstance(config, Mapping) else None
+    extract_config: Mapping[str, Any] = {}
+    if isinstance(preflight, Mapping):
+        extract_candidate = preflight.get("extract")
+        if isinstance(extract_candidate, Mapping):
+            extract_config = extract_candidate
+    chunk_candidate = extract_config.get("chunking") if extract_config else None
+    chunk_config = chunk_candidate if isinstance(chunk_candidate, Mapping) else {}
+
+    enabled_value = chunk_config.get("enabled")
+    enabled = True if enabled_value is None else bool(enabled_value)
+
+    raw_max_chars = chunk_config.get("max_characters")
+    max_chars_value = _coerce_optional_int(raw_max_chars)
+    if raw_max_chars is not None and (max_chars_value is None or max_chars_value <= 0):
+        enabled = False
+        max_characters = DEFAULT_CHUNK_MAX_CHARACTERS
+    else:
+        max_characters = max_chars_value or DEFAULT_CHUNK_MAX_CHARACTERS
+
+    overlap_value = chunk_config.get("overlap_characters")
+    overlap_characters = _coerce_optional_int(overlap_value)
+    if overlap_characters is None or overlap_characters < 0:
+        overlap_characters = DEFAULT_CHUNK_OVERLAP_CHARACTERS
+    if overlap_characters >= max_characters:
+        overlap_characters = max(0, max_characters // 4)
+
+    per_chunk_value = chunk_config.get("max_points_per_chunk")
+    if per_chunk_value == 0:
+        max_points_per_chunk: Optional[int] = None
+    else:
+        per_chunk_limit = _coerce_optional_int(per_chunk_value)
+        max_points_per_chunk = (
+            per_chunk_limit if per_chunk_limit is not None else DEFAULT_CHUNK_MAX_POINTS_PER_CHUNK
+        )
+
+    return ChunkingSettings(
+        enabled=enabled and max_characters > 0,
+        max_characters=max_characters,
+        overlap_characters=overlap_characters,
+        max_points_per_chunk=max_points_per_chunk,
+    )
+
+
+def _split_into_chunks(content: str, settings: ChunkingSettings) -> Tuple[_PipelineChunk, ...]:
+    """Split ``content`` into bounded chunks using soft paragraph boundaries."""
+
+    total_length = len(content)
+    if total_length == 0:
+        return (
+            _PipelineChunk(index=0, start_offset=0, end_offset=0, content=""),
+        )
+
+    chunks: list[_PipelineChunk] = []
+    start = 0
+    index = 0
+    while start < total_length:
+        proposed_end = min(start + settings.max_characters, total_length)
+        if proposed_end < total_length:
+            search_floor = min(proposed_end, start + max(settings.max_characters // 2, 1))
+            boundary = content.rfind("\n\n", search_floor, proposed_end)
+            if boundary == -1:
+                boundary = content.rfind("\n", search_floor, proposed_end)
+            if boundary > start:
+                proposed_end = boundary
+        if proposed_end <= start:
+            proposed_end = min(start + settings.max_characters, total_length)
+
+        chunk_text = content[start:proposed_end]
+        if not chunk_text:
+            break
+
+        chunks.append(
+            _PipelineChunk(
+                index=index,
+                start_offset=start,
+                end_offset=proposed_end,
+                content=chunk_text,
+            )
+        )
+
+        if proposed_end >= total_length:
+            break
+
+        chunk_length = proposed_end - start
+        overlap = settings.overlap_characters
+        if overlap <= 0 or overlap >= chunk_length:
+            next_start = proposed_end
+        else:
+            next_start = proposed_end - overlap
+        if next_start <= start:
+            next_start = proposed_end
+
+        start = next_start
+        index += 1
+
+    return tuple(chunks)
+
+
+def _compose_chunk_pipeline_input(
+    pipeline_input: PipelineInput,
+    chunk: _PipelineChunk,
+    *,
+    chunk_count: int,
+    overlap: int,
+) -> PipelineInput:
+    """Create a chunk-specific :class:`PipelineInput` with metadata annotations."""
+
+    parent_metadata = dict(pipeline_input.metadata or {})
+    parent_metadata["chunk"] = {
+        "index": chunk.index,
+        "count": chunk_count,
+        "start_offset": chunk.start_offset,
+        "end_offset": chunk.end_offset,
+        "characters": chunk.end_offset - chunk.start_offset,
+        "overlap_characters": overlap,
+    }
+    chunk_source = pipeline_input.source or "pipeline-input"
+    chunk_source = f"{chunk_source}#chunk-{chunk.index + 1}"
+    return PipelineInput(content=chunk.content, source=chunk_source, metadata=parent_metadata)
+
+
+def _compose_chunk_provider_metadata(
+    metadata: Optional[Mapping[str, object]],
+    chunk: _PipelineChunk,
+    *,
+    chunk_count: int,
+) -> Optional[Mapping[str, object]]:
+    """Build provider metadata that advertises the current chunk context."""
+
+    base = dict(metadata) if metadata is not None else {}
+    base["preflight_chunk"] = {
+        "index": chunk.index,
+        "count": chunk_count,
+        "start_offset": chunk.start_offset,
+        "end_offset": chunk.end_offset,
+    }
+    return base if base else None
+
+
+def _select_points(
+    candidates: Sequence[Tuple[ExtractedPoint, int, int]],
+    *,
+    max_points: Optional[int],
+) -> Tuple[Tuple[ExtractedPoint, ...], bool, int]:
+    """Return deduplicated points ordered by confidence and chunk index."""
+
+    if not candidates:
+        return (), False, 0
+
+    unique_keys = {
+        (point.title.strip().lower(), point.summary.strip().lower())
+        for point, _, _ in candidates
+    }
+    sorted_candidates = sorted(
+        candidates,
+        key=lambda item: (
+            -item[0].confidence,
+            item[1],
+            item[2],
+            item[0].id,
+        ),
+    )
+
+    selected: list[ExtractedPoint] = []
+    seen: set[Tuple[str, str]] = set()
+    for point, _, _ in sorted_candidates:
+        key = (point.title.strip().lower(), point.summary.strip().lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        selected.append(point)
+        if max_points is not None and len(selected) >= max_points:
+            break
+
+    truncated = max_points is not None and len(selected) < len(unique_keys)
+    return tuple(selected), truncated, len(unique_keys)
+
+
+def _merge_chunk_results(
+    *,
+    pipeline_input: PipelineInput,
+    total_characters: int,
+    chunks: Sequence[_PipelineChunk],
+    chunk_results: Sequence[ExtractionResult],
+    max_points: Optional[int],
+    settings: ChunkingSettings,
+) -> ExtractionResult:
+    """Merge chunk-level extraction outputs into a single aggregated result."""
+
+    candidates: list[Tuple[ExtractedPoint, int, int]] = []
+    aggregated_errors: list[str] = []
+    fallback_chunks: list[dict[str, Any]] = []
+    chunk_stats: list[dict[str, Any]] = []
+    truncated = False
+
+    for chunk, result in zip(chunks, chunk_results):
+        chunk_stats.append(
+            {
+                "index": chunk.index,
+                "start_offset": chunk.start_offset,
+                "end_offset": chunk.end_offset,
+                "characters": chunk.end_offset - chunk.start_offset,
+                "points": len(result.points),
+                "truncated": result.truncated,
+                "validation_error_count": len(result.validation_errors),
+            }
+        )
+        truncated = truncated or result.truncated
+        if result.raw_response is not None or result.validation_errors:
+            fallback_chunks.append(
+                {
+                    "index": chunk.index,
+                    "raw_response": result.raw_response,
+                    "validation_errors": list(result.validation_errors),
+                }
+            )
+        for message in result.validation_errors:
+            aggregated_errors.append(f"chunk[{chunk.index + 1}]: {message}")
+        for order, point in enumerate(result.points):
+            candidates.append((point, chunk.index, order))
+
+    selected_points, truncated_by_limit, unique_candidate_count = _select_points(
+        candidates,
+        max_points=max_points,
+    )
+    truncated = truncated or truncated_by_limit
+
+    chunking_stats: dict[str, Any] = {
+        "strategy": "chunked_map_reduce",
+        "chunk_count": len(chunks),
+        "chunk_size_limit": settings.max_characters,
+        "chunk_overlap": settings.overlap_characters,
+        "max_points_per_chunk": settings.max_points_per_chunk,
+        "map_points_before_merge": len(candidates),
+        "unique_candidates": unique_candidate_count,
+        "selected_points": len(selected_points),
+        "truncated_chunks": sum(1 for stats in chunk_stats if stats["truncated"]),
+        "fallback_chunks": len(fallback_chunks),
+        "chunks": chunk_stats,
+    }
+    if max_points is not None:
+        chunking_stats["global_point_limit"] = max_points
+
+    source_stats: dict[str, Any] = {
+        "characters": total_characters,
+        "chunking": chunking_stats,
+    }
+
+    metadata_view = dict(pipeline_input.metadata or {})
+    if metadata_view.get("truncated") and not source_stats.get("input_truncated"):
+        source_stats["input_truncated"] = True
+        truncation_reason = metadata_view.get("truncation_reason")
+        if truncation_reason:
+            source_stats["input_truncation_reason"] = str(truncation_reason)
+
+    raw_response: Optional[str] = None
+    if fallback_chunks:
+        raw_response = json.dumps({"chunk_fallbacks": fallback_chunks}, ensure_ascii=False)
+
+    return ExtractionResult(
+        points=selected_points,
+        source_stats=source_stats,
+        truncated=truncated,
+        raw_response=raw_response,
+        validation_errors=tuple(aggregated_errors),
+    )
+
 
 
 def _compose_retry_prompt(base_prompt: str, retry_guidance: str) -> str:
@@ -616,6 +913,139 @@ class OpenAIPointExtractorGateway(_OpenAIPreflightGatewayBase, PointExtractorGat
         self._parser = parser or ExtractionResponseParser()
         self._prompt_builder = prompt_builder
         self._schema_loader = schema_loader
+        self._chunking_settings = _resolve_chunking_settings(self._config)
+
+    def _should_chunk(self, total_characters: int) -> bool:
+        """Determine whether the pipeline input should be processed in chunks."""
+
+        settings = self._chunking_settings
+        return settings.enabled and total_characters > settings.max_characters
+
+    def _determine_chunk_limit(self, global_limit: Optional[int]) -> Optional[int]:
+        """Return the per-chunk point limit given the global ``global_limit``."""
+
+        per_chunk = self._chunking_settings.max_points_per_chunk
+        if per_chunk is None or per_chunk <= 0:
+            return global_limit
+        if global_limit is None:
+            return per_chunk
+        return min(per_chunk, global_limit)
+
+    def _extract_single(
+        self,
+        pipeline_input: PipelineInput,
+        schema: Mapping[str, Any],
+        *,
+        max_points: Optional[int],
+        metadata: Optional[Mapping[str, object]],
+        operation_name: str,
+        total_characters: int,
+    ) -> ExtractionResult:
+        """Execute a single extraction request without chunking."""
+
+        prompt_bundle = self._prompt_builder(
+            pipeline_input,
+            schema,
+            max_points=max_points,
+        )
+        metadata_copy = dict(metadata) if metadata is not None else None
+        result = self._execute_with_retries(
+            system_message=prompt_bundle.system,
+            user_message=prompt_bundle.user,
+            parser=self._parser,
+            metadata=metadata_copy,
+            operation_name=operation_name,
+        )
+
+        enriched_stats = dict(result.source_stats or {})
+        enriched_stats["characters"] = total_characters
+        metadata_view = pipeline_input.metadata or {}
+        if metadata_view.get("truncated") and "input_truncated" not in enriched_stats:
+            enriched_stats["input_truncated"] = True
+            truncation_reason = metadata_view.get("truncation_reason")
+            if truncation_reason and "input_truncation_reason" not in enriched_stats:
+                enriched_stats["input_truncation_reason"] = str(truncation_reason)
+
+        truncated = result.truncated
+        if not truncated and max_points is not None and len(result.points) >= max_points:
+            truncated = True
+
+        return ExtractionResult(
+            points=result.points,
+            source_stats=enriched_stats,
+            truncated=truncated,
+            raw_response=result.raw_response,
+            validation_errors=result.validation_errors,
+        )
+
+    def _extract_with_chunking(
+        self,
+        pipeline_input: PipelineInput,
+        schema: Mapping[str, Any],
+        *,
+        max_points: Optional[int],
+        metadata: Optional[Mapping[str, object]],
+    ) -> ExtractionResult:
+        """Run the chunked extraction pipeline for large inputs."""
+
+        settings = self._chunking_settings
+        chunks = _split_into_chunks(pipeline_input.content, settings)
+        if not chunks:
+            return ExtractionResult(
+                points=(),
+                source_stats={
+                    "characters": len(pipeline_input.content),
+                    "chunking": {
+                        "strategy": "chunked_map_reduce",
+                        "chunk_count": 0,
+                    },
+                },
+                truncated=False,
+            )
+
+        chunk_count = len(chunks)
+        _LOGGER.info(
+            (
+                "event=preflight_chunking_enabled provider=openai operation=preflight_extraction "
+                "chunks=%d chunk_size_limit=%d overlap=%d"
+            ),
+            chunk_count,
+            settings.max_characters,
+            settings.overlap_characters,
+        )
+
+        chunk_limit = self._determine_chunk_limit(max_points)
+        chunk_results: list[ExtractionResult] = []
+        for chunk in chunks:
+            chunk_input = _compose_chunk_pipeline_input(
+                pipeline_input,
+                chunk,
+                chunk_count=chunk_count,
+                overlap=settings.overlap_characters,
+            )
+            chunk_metadata = _compose_chunk_provider_metadata(
+                metadata,
+                chunk,
+                chunk_count=chunk_count,
+            )
+            chunk_result = self._extract_single(
+                chunk_input,
+                schema,
+                max_points=chunk_limit,
+                metadata=chunk_metadata,
+                operation_name=f"preflight_extraction_chunk_{chunk.index + 1}_of_{chunk_count}",
+                total_characters=chunk.end_offset - chunk.start_offset,
+            )
+            chunk_results.append(chunk_result)
+
+        return _merge_chunk_results(
+            pipeline_input=pipeline_input,
+            total_characters=len(pipeline_input.content),
+            chunks=chunks,
+            chunk_results=tuple(chunk_results),
+            max_points=max_points,
+            settings=settings,
+        )
 
     def extract_points(
         self,
@@ -673,39 +1103,21 @@ class OpenAIPointExtractorGateway(_OpenAIPreflightGatewayBase, PointExtractorGat
             )
 
         schema = self._schema_loader()
-        prompt_bundle = self._prompt_builder(
+        if self._should_chunk(total_characters):
+            return self._extract_with_chunking(
+                pipeline_input,
+                schema,
+                max_points=max_points,
+                metadata=metadata,
+            )
+
+        return self._extract_single(
             pipeline_input,
             schema,
             max_points=max_points,
-        )
-        metadata_copy = dict(metadata) if metadata is not None else None
-        result = self._execute_with_retries(
-            system_message=prompt_bundle.system,
-            user_message=prompt_bundle.user,
-            parser=self._parser,
-            metadata=metadata_copy,
+            metadata=metadata,
             operation_name="preflight_extraction",
-        )
-
-        enriched_stats = dict(result.source_stats or {})
-        enriched_stats["characters"] = total_characters
-        metadata_view = pipeline_input.metadata or {}
-        if metadata_view.get("truncated") and "input_truncated" not in enriched_stats:
-            enriched_stats["input_truncated"] = True
-            truncation_reason = metadata_view.get("truncation_reason")
-            if truncation_reason and "input_truncation_reason" not in enriched_stats:
-                enriched_stats["input_truncation_reason"] = str(truncation_reason)
-
-        truncated = result.truncated
-        if not truncated and max_points is not None and len(result.points) >= max_points:
-            truncated = True
-
-        return ExtractionResult(
-            points=result.points,
-            source_stats=enriched_stats,
-            truncated=truncated,
-            raw_response=result.raw_response,
-            validation_errors=result.validation_errors,
+            total_characters=total_characters,
         )
 
 

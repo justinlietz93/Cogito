@@ -199,6 +199,131 @@ def test_point_extractor_marks_truncated_when_limit_reached() -> None:
     assert result.source_stats["characters"] == len(pipeline_input.content)
 
 
+def test_point_extractor_chunks_large_inputs() -> None:
+    LOGGER.info("Validating chunked extraction splits oversized inputs into multiple calls.")
+    """Ensure large inputs trigger chunked processing with aggregated results."""
+
+    first_payload = _make_valid_extraction_payload()
+    first_payload["points"][0]["id"] = "chunk-1"
+    first_payload["points"][0]["title"] = "Chunk 1"
+    first_payload["points"][0]["summary"] = "Summary for the first chunk."
+    second_payload = _make_valid_extraction_payload()
+    second_payload["points"][0]["id"] = "chunk-2"
+    second_payload["points"][0]["title"] = "Chunk 2"
+    second_payload["points"][0]["summary"] = "Summary for the second chunk."
+    call = DummyCall([first_payload, second_payload])
+    config = {
+        "preflight": {
+            "extract": {
+                "chunking": {
+                    "max_characters": 120,
+                    "overlap_characters": 0,
+                    "max_points_per_chunk": 2,
+                }
+            }
+        }
+    }
+    gateway = OpenAIPointExtractorGateway(call_model=call, config=config, max_retries=0)
+    content = (
+        "Chunk-one sentinel paragraph describing the first portion of the corpus.\n\n"
+        "Chunk-two sentinel paragraph highlighting the remaining context to ensure chunking."
+    )
+    pipeline_input = PipelineInput(content=content, source="unit-test")
+
+    result = gateway.extract_points(pipeline_input, max_points=4)
+
+    assert len(call.calls) == 2
+    assert {point.id for point in result.points} == {"chunk-1", "chunk-2"}
+    stats = result.source_stats["chunking"]
+    assert stats["chunk_count"] == 2
+    assert stats["map_points_before_merge"] == 2
+    assert stats["selected_points"] == 2
+    assert result.source_stats["characters"] == len(content)
+
+
+def test_point_extractor_chunking_enforces_global_limit() -> None:
+    LOGGER.info("Ensuring chunked extraction honours the global max_points setting.")
+    """Verify chunked outputs are trimmed to the configured global limit."""
+
+    lower_confidence = _make_valid_extraction_payload()
+    lower_confidence["points"][0]["id"] = "chunk-low"
+    lower_confidence["points"][0]["confidence"] = 0.4
+    lower_confidence["points"][0]["title"] = "Lower confidence chunk"
+    lower_confidence["points"][0]["summary"] = "Details originating from the lower-confidence segment."
+    higher_confidence = _make_valid_extraction_payload()
+    higher_confidence["points"][0]["id"] = "chunk-high"
+    higher_confidence["points"][0]["confidence"] = 0.95
+    higher_confidence["points"][0]["title"] = "Higher confidence chunk"
+    higher_confidence["points"][0]["summary"] = "Findings captured in the higher-confidence segment."
+    call = DummyCall([lower_confidence, higher_confidence])
+    config = {
+        "preflight": {
+            "extract": {
+                "chunking": {
+                    "max_characters": 90,
+                    "overlap_characters": 0,
+                    "max_points_per_chunk": 2,
+                }
+            }
+        }
+    }
+    gateway = OpenAIPointExtractorGateway(call_model=call, config=config, max_retries=0)
+    content = (
+        "A detailed first section discussing requirements and findings.\n\n"
+        "A follow-up section providing additional corroborating details."
+    )
+    pipeline_input = PipelineInput(content=content, source="unit-test")
+
+    result = gateway.extract_points(pipeline_input, max_points=1)
+
+    assert len(call.calls) == 2
+    assert len(result.points) == 1
+    assert result.points[0].id == "chunk-high"
+    assert result.truncated is True
+    stats = result.source_stats["chunking"]
+    assert stats["unique_candidates"] == 2
+    assert stats["selected_points"] == 1
+    assert stats["global_point_limit"] == 1
+
+
+def test_point_extractor_chunking_aggregates_validation_errors() -> None:
+    LOGGER.info("Checking chunked extraction surfaces validation errors from individual chunks.")
+    """Confirm fallback metadata from chunk retries is propagated to the aggregate result."""
+
+    invalid_payload = "not-json"
+    valid_payload = _make_valid_extraction_payload()
+    call = DummyCall([invalid_payload, valid_payload])
+    config = {
+        "preflight": {
+            "extract": {
+                "chunking": {
+                    "max_characters": 90,
+                    "overlap_characters": 0,
+                    "max_points_per_chunk": 1,
+                }
+            }
+        }
+    }
+    gateway = OpenAIPointExtractorGateway(call_model=call, config=config, max_retries=0)
+    content = (
+        "First section intentionally triggers fallback handling.\n\n"
+        "Second section remains valid and should populate the final result."
+    )
+    pipeline_input = PipelineInput(content=content, source="unit-test")
+
+    result = gateway.extract_points(pipeline_input)
+
+    assert len(call.calls) == 2
+    assert len(result.points) == 1
+    assert result.validation_errors
+    assert any(message.startswith("chunk[1]:") for message in result.validation_errors)
+    assert result.source_stats["chunking"]["fallback_chunks"] == 1
+    assert result.raw_response is not None
+    fallback_payload = json.loads(result.raw_response)
+    assert fallback_payload["chunk_fallbacks"][0]["index"] == 0
+    assert fallback_payload["chunk_fallbacks"][0]["raw_response"] == invalid_payload
+
+
 def test_point_extractor_retries_on_validation_error() -> None:
     LOGGER.info("Ensuring extractor performs a retry after validation issues.")
     """Ensure a retry occurs when the first response fails validation.
