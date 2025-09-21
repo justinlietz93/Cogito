@@ -245,3 +245,51 @@ def test_run_logs_query_summary(caplog: pytest.LogCaptureFixture) -> None:
     assert "queries_count=1" in summary
     assert "dependencies_present=true" in summary
     assert "time_ms=" in summary
+
+
+def test_run_logs_exclude_sensitive_values(caplog: pytest.LogCaptureFixture) -> None:
+    LOGGER.info("Ensuring orchestrator logs avoid leaking pipeline content or secrets.")
+    """Validate that orchestrator summary logs do not include sensitive metadata.
+
+    Args:
+        caplog: Pytest fixture used to capture logging records for assertions.
+
+    Returns:
+        None.
+
+    Raises:
+        AssertionError: If sensitive values such as corpus content or API keys
+            appear in the log records.
+
+    Side Effects:
+        None.
+
+    Timeout:
+        Not applicable.
+    """
+
+    extraction_result = _build_extraction_result()
+    extractor = ExtractionService(gateway=_StubExtractorGateway(extraction_result))
+    query_builder = QueryBuildingService(gateway=_StubQueryGateway(_build_query_plan()))
+    orchestrator = PreflightOrchestrator(extractor, query_builder)
+    pipeline_input = PipelineInput(
+        content="Highly sensitive body text",
+        metadata={"api_key": "sk-test"},
+    )
+
+    caplog.set_level(logging.INFO, logger="src.application.preflight.orchestrator")
+    orchestrator.run(
+        pipeline_input,
+        PreflightOptions(
+            enable_extraction=True,
+            enable_query_building=True,
+            metadata={"api_key": "sk-live-123", "run_id": "test-run"},
+        ),
+    )
+
+    sensitive_strings = {"Highly sensitive body text", "sk-test", "sk-live-123"}
+    for record in caplog.records:
+        if record.name == "src.application.preflight.orchestrator":
+            message = record.getMessage()
+            for value in sensitive_strings:
+                assert value not in message

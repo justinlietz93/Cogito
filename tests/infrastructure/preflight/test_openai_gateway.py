@@ -10,6 +10,7 @@ import pytest
 
 from src.domain.preflight import ExtractedPoint, ExtractionResult
 from src.infrastructure.preflight.openai_gateway import (
+    DEFAULT_MAX_OUTPUT_TOKENS,
     OpenAIPointExtractorGateway,
     OpenAIQueryBuilderGateway,
 )
@@ -242,6 +243,108 @@ def test_point_extractor_honours_metadata_overrides() -> None:
     )
 
     assert call.calls[0]["overrides"]["max_tokens"] == 1234
+
+
+def test_point_extractor_applies_configured_token_cap() -> None:
+    LOGGER.info("Ensuring extractor forwards configured max token caps to the provider.")
+    """Verify that configuration defaults restrict provider token emission.
+
+    Returns:
+        None.
+
+    Raises:
+        AssertionError: If the configured token cap is not forwarded to the
+            provider invocation.
+
+    Side Effects:
+        None.
+
+    Timeout:
+        Not applicable.
+    """
+
+    call = DummyCall([_make_valid_extraction_payload()])
+    gateway = OpenAIPointExtractorGateway(
+        call_model=call,
+        config={"api": {"openai": {"max_tokens": 2048}}},
+        max_retries=0,
+    )
+    pipeline_input = PipelineInput(content="Example content", source="unit-test")
+
+    gateway.extract_points(pipeline_input)
+
+    assert call.calls[0]["overrides"]["max_tokens"] == 2048
+
+
+def test_point_extractor_uses_default_token_cap_when_missing() -> None:
+    LOGGER.info("Confirming extractor falls back to the default max token limit.")
+    """Ensure the fallback token cap applies when configuration omits a value.
+
+    Returns:
+        None.
+
+    Raises:
+        AssertionError: If the default token cap is not forwarded to the
+            provider invocation.
+
+    Side Effects:
+        None.
+
+    Timeout:
+        Not applicable.
+    """
+
+    call = DummyCall([_make_valid_extraction_payload()])
+    gateway = OpenAIPointExtractorGateway(call_model=call, config={}, max_retries=0)
+    pipeline_input = PipelineInput(content="Example content", source="unit-test")
+
+    gateway.extract_points(pipeline_input)
+
+    assert call.calls[0]["overrides"]["max_tokens"] == DEFAULT_MAX_OUTPUT_TOKENS
+
+
+def test_gateway_logs_exclude_sensitive_values(caplog: pytest.LogCaptureFixture) -> None:
+    LOGGER.info("Ensuring gateway logs omit sensitive content and secret values.")
+    """Confirm provider logging excludes pipeline content and API keys.
+
+    Args:
+        caplog: Pytest fixture for capturing log output during execution.
+
+    Returns:
+        None.
+
+    Raises:
+        AssertionError: If any captured log message contains sensitive
+            substrings such as pipeline content or API keys.
+
+    Side Effects:
+        None.
+
+    Timeout:
+        Not applicable.
+    """
+
+    call = DummyCall([_make_valid_extraction_payload()])
+    gateway = OpenAIPointExtractorGateway(call_model=call, config={}, max_retries=0)
+    pipeline_input = PipelineInput(
+        content="Secret corpus body",
+        source="unit-test",
+        metadata={"api_key": "sk-input"},
+    )
+    metadata = {
+        "api_key": "sk-meta",
+        "provider_overrides": {"api_key": "sk-override"},
+    }
+
+    caplog.set_level(logging.INFO, logger="src.infrastructure.preflight.openai_gateway")
+    gateway.extract_points(pipeline_input, metadata=metadata)
+
+    sensitive_strings = {"Secret corpus body", "sk-input", "sk-meta", "sk-override"}
+    for record in caplog.records:
+        if record.name == "src.infrastructure.preflight.openai_gateway":
+            message = record.getMessage()
+            for value in sensitive_strings:
+                assert value not in message
 
 
 def test_query_builder_successful_execution() -> None:

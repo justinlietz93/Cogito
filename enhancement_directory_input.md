@@ -77,9 +77,9 @@ Instruction to Coding Agent: Use this checklist to create concrete tasks and imp
 
 ## 9) Security & Privacy
 
-- [ ] Do not log content; only counts/ids.
-- [ ] Mask API keys in logs; validate executables via `shutil.which` if any subprocesses are introduced (avoid shell).
-- [ ] Respect max tokens and caps to avoid data overexposure to providers.
+- [x] Do not log content; only counts/ids.
+- [x] Mask API keys in logs; validate executables via `shutil.which` if any subprocesses are introduced (avoid shell).
+- [x] Respect max tokens and caps to avoid data overexposure to providers.
 
 ## 10) Tests (TDD preferred)
 
