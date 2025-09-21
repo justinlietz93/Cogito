@@ -334,7 +334,26 @@ python run_critique.py your_document.txt --scientific --PR
 
 # Generate publication-ready LaTeX output
 python run_critique.py your_document.txt --scientific --PR --latex
+
+# Critique every markdown file in a directory using configuration defaults
+python run_critique.py --input-dir ./research_notes
+
+# Override include/exclude patterns and explicit ordering for directory runs
+python run_critique.py \
+  --input-dir ./research_notes \
+  --include "**/*.md,**/*.txt" \
+  --exclude "**/archive/**" \
+  --order abstract.md,intro.md,results.md,discussion.md \
+  --max-files 25 \
+  --max-chars 500000
 ```
+
+The directory flags honour defaults from ``config.json`` under the
+``critique.directory_input`` section. Update those values to change global CLI
+behaviour—for example adjusting ``include``/``exclude`` globs, ``max_files``
+caps, or disabling directory ingestion entirely by setting ``enabled`` to
+``false``. Traditional single-file usage remains unchanged and continues to
+accept either a positional path or literal text input.
 
 ### For Research Synthesis
 

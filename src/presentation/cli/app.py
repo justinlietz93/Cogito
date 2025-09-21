@@ -1,13 +1,28 @@
-"""Interactive CLI application for the Cogito critique pipeline."""
+"""Presentation-layer orchestration for the Critique CLI.
+
+Purpose:
+    Translate parsed command-line arguments into application-layer requests,
+    apply configuration defaults, and coordinate critique executions through the
+    injected services while maintaining clean-architecture boundaries.
+External Dependencies:
+    Python standard library modules ``argparse``, ``logging``, and ``datetime``.
+Fallback Semantics:
+    CLI handlers fall back to configuration defaults and provide human-readable
+    error messages. No implicit retries are performed at this layer.
+Timeout Strategy:
+    Not applicable. The CLI delegates long-running operations to injected
+    services which should apply timeout management if required.
+"""
 
 from __future__ import annotations
 
 import argparse
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable, Mapping, Optional, Union
+from typing import Any, Callable, Mapping, Optional, Sequence, Tuple, Union
 
 from ...application.critique.exceptions import ConfigurationError, MissingApiKeyError
 from ...application.critique.services import CritiqueRunner
@@ -16,16 +31,135 @@ from ...application.user_settings.services import (
     SettingsPersistenceError,
     UserSettingsService,
 )
-from ...input_reader import read_file_content
 from ...pipeline_input import (
     EmptyPipelineInputError,
     InvalidPipelineInputError,
     PipelineInput,
     ensure_pipeline_input,
 )
-from ...scientific_review_formatter import format_scientific_peer_review
 from ...latex.cli import handle_latex_output
+from ...scientific_review_formatter import format_scientific_peer_review
+from ...application.critique.requests import (
+    DirectoryInputRequest,
+    FileInputRequest,
+    LiteralTextInputRequest,
+)
 from .utils import derive_base_name, extract_latex_args, mask_key
+
+
+@dataclass(frozen=True)
+class DirectoryInputDefaults:
+    """Configuration defaults applied when building directory requests.
+
+    Args:
+        include: Glob patterns identifying files to aggregate by default.
+        exclude: Glob patterns that should be ignored unless explicitly
+            requested otherwise.
+        recursive: Whether directory traversal recurses into subdirectories.
+        max_files: Maximum number of files processed before truncation. ``None``
+            disables the cap.
+        max_chars: Maximum number of characters consumed across all files.
+        section_separator: Text inserted between aggregated file contents.
+        label_sections: Whether repositories prepend section headings per file.
+        enabled: Flag allowing configuration to disable directory ingestion.
+    """
+
+    include: Tuple[str, ...] = ("**/*.md", "**/*.txt")
+    exclude: Tuple[str, ...] = ("**/.git/**", "**/node_modules/**")
+    recursive: bool = True
+    max_files: Optional[int] = 200
+    max_chars: Optional[int] = 1_000_000
+    section_separator: str = "\n\n---\n\n"
+    label_sections: bool = True
+    enabled: bool = True
+
+    @classmethod
+    def from_mapping(cls, config: Mapping[str, Any]) -> "DirectoryInputDefaults":
+        """Construct defaults from a configuration mapping.
+
+        Args:
+            config: Configuration dictionary loaded from persistent settings.
+
+        Returns:
+            Instance populated with values pulled from ``config`` or class
+            defaults when keys are absent.
+
+        Raises:
+            None.
+
+        Side Effects:
+            None.
+
+        Timeout:
+            Not applicable.
+        """
+
+        defaults = cls()
+        include = cls._coerce_patterns(config.get("include"), defaults.include)
+        exclude = cls._coerce_patterns(config.get("exclude"), defaults.exclude)
+        recursive = cls._coerce_bool(config.get("recursive"), defaults.recursive)
+        max_files = cls._coerce_optional_int(config.get("max_files"), defaults.max_files)
+        max_chars = cls._coerce_optional_int(config.get("max_chars"), defaults.max_chars)
+        section_separator = (
+            str(config.get("section_separator"))
+            if isinstance(config.get("section_separator"), str)
+            else defaults.section_separator
+        )
+        label_sections = cls._coerce_bool(config.get("label_sections"), defaults.label_sections)
+        enabled = cls._coerce_bool(config.get("enabled"), defaults.enabled)
+        return cls(
+            include=include,
+            exclude=exclude,
+            recursive=recursive,
+            max_files=max_files,
+            max_chars=max_chars,
+            section_separator=section_separator,
+            label_sections=label_sections,
+            enabled=enabled,
+        )
+
+    @staticmethod
+    def _coerce_patterns(value: Any, default: Tuple[str, ...]) -> Tuple[str, ...]:
+        """Normalise pattern configuration into a tuple of strings."""
+
+        if value is None:
+            return default
+        if isinstance(value, str):
+            parts = [item.strip() for item in value.split(",") if item.strip()]
+            return tuple(parts or default)
+        if isinstance(value, (list, tuple, set)):
+            parts = [str(item).strip() for item in value if str(item).strip()]
+            return tuple(parts or default)
+        return default
+
+    @staticmethod
+    def _coerce_optional_int(value: Any, default: Optional[int]) -> Optional[int]:
+        """Convert configuration values to optional integers."""
+
+        if value is None:
+            return default
+        try:
+            numeric = int(value)
+        except (TypeError, ValueError):
+            return default
+        return numeric
+
+    @staticmethod
+    def _coerce_bool(value: Any, default: bool) -> bool:
+        """Convert configuration values to booleans while preserving default."""
+
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"true", "1", "yes", "on"}:
+                return True
+            if lowered in {"false", "0", "no", "off"}:
+                return False
+            return default
+        return bool(value)
 
 
 class CliApp:
@@ -36,6 +170,7 @@ class CliApp:
         settings_service: UserSettingsService,
         critique_runner: CritiqueRunner,
         *,
+        directory_defaults: DirectoryInputDefaults | None = None,
         input_func: Callable[[str], str] = input,
         output_func: Callable[[str], None] = print,
     ) -> None:
@@ -44,30 +179,179 @@ class CliApp:
         self._input = input_func
         self._output = output_func
         self._logger = logging.getLogger(__name__)
+        self._directory_defaults = directory_defaults or DirectoryInputDefaults()
+
+    @property
+    def directory_defaults(self) -> DirectoryInputDefaults:
+        """Return the directory input defaults configured for the CLI app.
+
+        Returns:
+            The :class:`DirectoryInputDefaults` instance active for this CLI
+            session.
+
+        Raises:
+            None.
+
+        Side Effects:
+            None.
+
+        Timeout:
+            Not applicable.
+        """
+
+        return self._directory_defaults
 
     # Public entry points --------------------------------------------------
     def run(self, args: argparse.Namespace, interactive: bool) -> None:
         if interactive:
             self._run_interactive()
+            return
+
+        descriptor, fallback_message = self._build_cli_input(args)
+        if descriptor is None:
+            if fallback_message:
+                self._output(fallback_message)
+            else:
+                self._output("No input selected. Use --interactive for guided navigation.")
+            return
+
+        latex_args = extract_latex_args(args)
+        output_dir = (
+            args.output_dir
+            or self._settings_service.get_settings().default_output_dir
+            or "critiques"
+        )
+        self._execute_run(
+            descriptor,
+            output_dir,
+            peer_review=args.peer_review,
+            scientific_mode=args.scientific_mode,
+            latex_args=latex_args,
+            remember_output=args.remember_output,
+            fallback_message=fallback_message,
+        )
+
+    def _build_cli_input(
+        self, args: argparse.Namespace
+    ) -> tuple[Optional[Union[PipelineInput, DirectoryInputRequest, FileInputRequest, LiteralTextInputRequest, Mapping[str, Any], str, Path]], Optional[str]]:
+        directory_arg = getattr(args, "input_dir", None)
+        if directory_arg:
+            if not self._directory_defaults.enabled:
+                message = (
+                    "Directory input has been disabled via configuration. "
+                    "Set critique.directory_input.enabled to true to re-enable directory aggregation."
+                )
+                self._logger.warning(
+                    "Directory input requested but disabled via configuration."
+                )
+                return None, message
+            return self._make_directory_request(directory_arg, args), None
+
+        raw_input = getattr(args, "input_file", None)
+        if raw_input is None:
+            return None, None
+        if isinstance(raw_input, (PipelineInput, DirectoryInputRequest, FileInputRequest, LiteralTextInputRequest)):
+            return raw_input, None
+        if isinstance(raw_input, Mapping):
+            return raw_input, None
+        if isinstance(raw_input, Path):
+            return FileInputRequest(path=raw_input), None
+        if isinstance(raw_input, str):
+            candidate = Path(raw_input).expanduser()
+            if candidate.exists():
+                return FileInputRequest(path=candidate), None
+            try:
+                literal_request = LiteralTextInputRequest(text=raw_input)
+            except ValueError as exc:
+                return None, f"Invalid input: {exc}"
+            return literal_request, "Input file not found; treating value as literal text."
+        return raw_input, None
+
+    def _make_directory_request(self, raw_root: Union[str, Path], args: argparse.Namespace) -> DirectoryInputRequest:
+        include_patterns = self._parse_pattern_list(
+            getattr(args, "include", None), self._directory_defaults.include
+        )
+        exclude_patterns = self._parse_pattern_list(
+            getattr(args, "exclude", None), self._directory_defaults.exclude
+        )
+        order_values = self._parse_pattern_list(getattr(args, "order", None), ())
+        order_file_raw = getattr(args, "order_from", None)
+        order_file = Path(order_file_raw).expanduser() if order_file_raw else None
+        recursive = self._resolve_flag(
+            getattr(args, "recursive", None), default=self._directory_defaults.recursive
+        )
+        label_sections = self._resolve_flag(
+            getattr(args, "label_sections", None), default=self._directory_defaults.label_sections
+        )
+        max_files = getattr(args, "max_files", None)
+        if max_files is None:
+            max_files = self._directory_defaults.max_files
+        max_chars = getattr(args, "max_chars", None)
+        if max_chars is None:
+            max_chars = self._directory_defaults.max_chars
+        section_separator = (
+            getattr(args, "section_separator", None) or self._directory_defaults.section_separator
+        )
+
+        return DirectoryInputRequest(
+            root=Path(raw_root).expanduser(),
+            include=include_patterns,
+            exclude=exclude_patterns,
+            recursive=recursive,
+            order=order_values if order_values else None,
+            order_file=order_file,
+            max_files=max_files,
+            max_chars=max_chars,
+            section_separator=section_separator,
+            label_sections=label_sections,
+        )
+
+    @staticmethod
+    def _parse_pattern_list(raw: Optional[Union[str, Sequence[str]]], default: Sequence[str]) -> Sequence[str]:
+        """Return normalised glob patterns from CLI arguments or defaults."""
+
+        if raw is None:
+            return tuple(default)
+        if isinstance(raw, str):
+            values = [item.strip() for item in raw.split(",") if item.strip()]
         else:
-            if getattr(args, "input_file", None) is None:
-                self._output("No input file provided. Use --interactive for guided navigation.")
-                return
-            latex_args = extract_latex_args(args)
-            input_payload: Any = args.input_file
-            output_dir = (
-                args.output_dir
-                or self._settings_service.get_settings().default_output_dir
-                or "critiques"
-            )
-            self._execute_run(
-                input_payload,
-                output_dir,
-                peer_review=args.peer_review,
-                scientific_mode=args.scientific_mode,
-                latex_args=latex_args,
-                remember_output=args.remember_output,
-            )
+            values = [str(item).strip() for item in raw if str(item).strip()]
+        return tuple(values or default)
+
+    @staticmethod
+    def _resolve_flag(value: Optional[bool], *, default: bool) -> bool:
+        """Return a boolean flag using CLI overrides when provided."""
+
+        if value is None:
+            return default
+        return bool(value)
+
+    def _prepare_input_descriptor(
+        self,
+        input_data: Union[
+            PipelineInput,
+            DirectoryInputRequest,
+            FileInputRequest,
+            LiteralTextInputRequest,
+            Path,
+            Mapping[str, Any],
+            str,
+        ],
+    ) -> Union[
+        PipelineInput,
+        DirectoryInputRequest,
+        FileInputRequest,
+        LiteralTextInputRequest,
+    ]:
+        if isinstance(input_data, (PipelineInput, DirectoryInputRequest, FileInputRequest, LiteralTextInputRequest)):
+            return input_data
+        if isinstance(input_data, Mapping):
+            return ensure_pipeline_input(input_data)
+        if isinstance(input_data, Path):
+            return FileInputRequest(path=input_data)
+        if isinstance(input_data, str):
+            return LiteralTextInputRequest(text=input_data)
+        return ensure_pipeline_input(input_data)
 
     # Interactive navigation ----------------------------------------------
     def _run_interactive(self) -> None:
@@ -109,7 +393,7 @@ class CliApp:
         latex_args = self._prompt_latex_options(output_directory)
 
         self._execute_run(
-            input_path,
+            FileInputRequest(path=input_path),
             output_directory,
             peer_review=peer_review,
             scientific_mode=scientific_mode,
@@ -120,57 +404,37 @@ class CliApp:
     # Execution helpers ----------------------------------------------------
     def _execute_run(
         self,
-        input_data: Union[PipelineInput, Path, Mapping[str, Any], str],
+        input_data: Union[
+            PipelineInput,
+            DirectoryInputRequest,
+            FileInputRequest,
+            LiteralTextInputRequest,
+            Path,
+            Mapping[str, Any],
+            str,
+        ],
         output_dir: Union[Path, str],
         *,
         peer_review: Optional[bool],
         scientific_mode: Optional[bool],
         latex_args: Optional[argparse.Namespace],
         remember_output: bool,
+        fallback_message: Optional[str] = None,
     ) -> None:
         output_path = Path(output_dir)
 
-        raw_value: Optional[str] = None
         try:
-            if isinstance(input_data, PipelineInput):
-                pipeline_input = input_data
-            elif isinstance(input_data, Path):
-                raw_value = str(input_data)
-                pipeline_input = ensure_pipeline_input(
-                    raw_value,
-                    read_file=read_file_content,
-                    assume_path=True,
-                    fallback_to_content=False,
-                )
-            else:
-                if isinstance(input_data, Mapping):
-                    payload = input_data
-                    raw_value = None
-                else:
-                    raw_value = str(input_data)
-                    payload = raw_value
-                pipeline_input = ensure_pipeline_input(
-                    payload,
-                    read_file=read_file_content,
-                    assume_path=True,
-                    fallback_to_content=True,
-                )
-        except FileNotFoundError:
-            if raw_value is not None:
-                self._output(f"Input file not found: {raw_value}")
-            else:
-                self._output("Input file not found.")
-            return
-        except (InvalidPipelineInputError, EmptyPipelineInputError) as exc:
+            descriptor = self._prepare_input_descriptor(input_data)
+        except (InvalidPipelineInputError, EmptyPipelineInputError, ValueError) as exc:
             self._output(f"Invalid input: {exc}")
             return
 
-        if pipeline_input.metadata.get("fallback_reason") == "file_not_found":
-            self._output("Input file not found; treating value as literal text.")
+        if fallback_message:
+            self._output(fallback_message)
 
         try:
             result = self._critique_runner.run(
-                pipeline_input,
+                descriptor,
                 peer_review=peer_review,
                 scientific_mode=scientific_mode,
             )
@@ -180,11 +444,19 @@ class CliApp:
         except ConfigurationError as exc:
             self._output(f"Configuration error: {exc}")
             return
+        except FileNotFoundError as exc:
+            self._output(f"Input file not found: {exc}")
+            return
+        except (UnicodeDecodeError, OSError) as exc:
+            self._logger.exception("Failed to load input content")
+            self._output(f"Failed to load input: {exc}")
+            return
         except Exception as exc:  # noqa: BLE001 - surface meaningful failure to the user
             self._logger.exception("Critique execution failed")
             self._output(f"Critique failed: {exc}")
             return
 
+        pipeline_input = result.pipeline_input
         try:
             output_path.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
@@ -476,4 +748,4 @@ class CliApp:
         else:
             self._output("  Stored API keys: <none>")
 
-__all__ = ["CliApp"]
+__all__ = ["CliApp", "DirectoryInputDefaults"]

@@ -26,5 +26,23 @@
   },
   "council_orchestrator": {
     "synthesis_confidence_threshold": 0.4
+  },
+  "critique": {
+    "directory_input": {
+      "enabled": true,
+      "include": [
+        "**/*.md",
+        "**/*.txt"
+      ],
+      "exclude": [
+        "**/.git/**",
+        "**/node_modules/**"
+      ],
+      "recursive": true,
+      "max_files": 200,
+      "max_chars": 1000000,
+      "section_separator": "\n\n---\n\n",
+      "label_sections": true
+    }
   }
 }
