@@ -1,294 +1,129 @@
-# Enhancement: Add Directory Input Support Across All Pipelines (Clean-Architecture Compliant)
+# Agent TODO Checklist: LLM Point Extractor & Query Builder
 
-## Context
+Instruction to Coding Agent: Use this checklist to create concrete tasks and implement an LLM-first Point Extractor and Query Builder that plug cleanly into the existing architecture. Favor small, testable increments. Each public module/class/function must include professional docstrings. Keep files ≤500 LOC. No shims; wire via interfaces.
 
-- Current behavior:
-  - Critique Council CLI accepts only a single file or literal text.
-  - Syncretic Catalyst flows support directory repositories with ordered documents.
-- Goal:
-  - Unify input handling so any pipeline (Critique Council, ArXiv flows, Syncretic Catalyst, others) can accept a full directory as input, with deterministic ordering, safe filtering, and robust aggregation.
-- Constraints:
-  - Strictly follow `ARCHITECTURE_RULES.md` and project standards: layered architecture, dependency inversion, DTOs, repository pattern, ≤500 LOC per file, full docstrings, robust error handling, and test-first mindset.
+## 1) Architecture & Contracts
 
-## Requirements
+- [ ] Define clean contracts in the application layer (no framework deps):
+  - [ ] `PointExtractorGateway` (port): extract concise, structured points from raw `PipelineInput`.
+  - [ ] `QueryBuilderGateway` (port): produce follow-up questions/queries from points and context.
+  - [ ] `ExtractionService` and `QueryBuildingService` orchestration services (thin, pure, testable).
+- [ ] DTOs (domain/application):
+  - [ ] `ExtractedPoint` (id, title, summary, evidence_refs, confidence [0-1], tags[]).
+  - [ ] `ExtractionResult` (points[], source_stats, truncated: bool).
+  - [ ] `BuiltQuery` (id, text, purpose, priority, depends_on_ids[], target_audience, suggested_tooling?).
+  - [ ] `QueryPlan` (queries[], rationale, assumptions, risks).
+- [ ] Ensure dependency direction: presentation → application → providers/infrastructure (inward only).
 
-### CLI/UX
+## 2) Prompting & Structured Output
 
-- Add directory-based flags to all pipeline entrypoints that consume content:
-  - `--input-dir <path>`
-  - `--include <glob1,glob2,...>` and `--exclude <glob1,glob2,...>`
-  - `--recursive` (default true)
-  - `--order <file1.md,file2.md,...>` or `--order-from <path/to/order.txt|json>` (optional explicit order)
-  - `--max-files <n>` and `--max-chars <n>` (safety caps)
-  - `--section-separator <string>` (default: a Markdown heading separator)
-  - `--label-sections` (prepend per-file headings)
-- Backwards compatibility: keep the single `input_file` positional and literal-text mode working.
-- Output naming: when base name derives from a directory, use directory stem; avoid duplicate “critique_critique” patterns (if base ends with `critique`, suffix becomes `_report_`).
+- [ ] Author robust LLM prompts (system + user) for:
+  - [ ] Point extraction: require strict JSON output matching a JSON Schema.
+  - [ ] Query building: produce questions/queries with purpose and dependency fields.
+- [ ] Define JSON Schemas (in `src/contexts/schemas/`):
+  - [ ] `extraction.schema.json` for `ExtractionResult`.
+  - [ ] `query_plan.schema.json` for `QueryPlan`.
+- [ ] Implement parser/validator:
+  - [ ] Strict JSON parsing with schema validation; reject if invalid and attempt 1 retry with error message reflection.
+  - [ ] Safe fallbacks: if still invalid, store raw text with `validation_errors` metadata and continue.
 
-### Architecture & Design
+## 3) Provider Integrations
 
-- Introduce an input abstraction (no shims):
-  - Domain/Application contract (pure types): `ContentRepository` interface.
-  - Implementations:
-    - `SingleFileContentRepository` (existing behavior).
-    - `DirectoryContentRepository` (new).
-  - Contract (example):
-    - Input: `root: Path`, `include: list[str]`, `exclude: list[str]`, `order: Optional[list[str]]`, `recursive: bool`, `max_files: int`, `max_chars: int`.
-    - Output: `PipelineInput` where:
-      - `content: str` (concatenated)
-      - `metadata: { files: [ { path, start_offset, end_offset, bytes, sha256 } ], input_type: "directory" }`.
-- Layer boundaries:
-  - Presentation: parse CLI args, pass to application service.
-  - Application: orchestrate repositories and build `PipelineInput`.
-  - Domain: pure models/DTOs; no I/O.
-  - Infrastructure: file system enumeration, filtering, ordering, reading (UTF-8 only), hashing.
-- Deterministic ordering:
-  - Respect explicit `--order` first; else lexicographic by path.
-  - Ignore hidden files by default unless explicitly included.
-  - Skip binaries (heuristic: try UTF-8 decode; on decode error, skip with log).
+- [ ] Implement provider adapters behind gateways (e.g., OpenAI first):
+  - [ ] Route GPT‑5/4.1/o‑series through Responses API with `max_output_tokens`.
+  - [ ] Set deterministic defaults (e.g., `temperature=0.2`) unless model requires override.
+  - [ ] Enforce timeouts via shared timeout config; no hard-coded numeric literals.
+- [ ] Add thin mappers: DTO ↔ provider payloads; keep providers isolated from application types.
 
-### Safety & Security
+## 4) Application Wiring
 
-- Path traversal guard: keep reads within `--input-dir`.
-- Symlink policy: ignore symlinks by default (consider `--follow-symlinks` later).
-- Enforce `max_files` and `max_chars`; log when truncation occurs.
-- Do not shell out; do not use `shell=True`; use fixed whitelisted argument lists.
+- [ ] Add services:
+  - [ ] `ExtractionService.run(PipelineInput) -> ExtractionResult`.
+  - [ ] `QueryBuildingService.run(ExtractionResult, PipelineInput?) -> QueryPlan`.
+- [ ] Update orchestrator(s) (optional toggle):
+  - [ ] New preflight stage: run extraction → queries before critique, or write artifacts for later stages.
+  - [ ] Record outputs to artifacts directory (JSON files) and attach paths to run metadata.
 
-### Error Handling & Logging
+## 5) CLI / UX
 
-- Clear exceptions: invalid directory, empty selection after filters, unreadable file.
-- Log counts/bytes and decisions (included/excluded files), not content.
-- No silent failures; surface recoverable warnings in CLI output.
+- [ ] CLI flags in `run_critique.py` (and any relevant entrypoints):
+  - [ ] `--preflight-extract` to enable extraction.
+  - [ ] `--preflight-build-queries` to enable query building.
+  - [ ] `--points-out <path>` and `--queries-out <path>` to control JSON artifact locations.
+  - [ ] `--max-points <n>` and `--max-queries <n>` (caps enforced in prompts and post-filtering).
+- [ ] Help text and examples updated; defaults sourced from `config.json`.
 
-### Configuration
+## 6) Configuration & Defaults
 
-- `config.json` defaults (example):
+- [ ] Extend `config.json` with:
+  - [ ] `preflight.extract.enabled`, `preflight.extract.max_points`.
+  - [ ] `preflight.queries.enabled`, `preflight.queries.max_queries`.
+  - [ ] Model + provider settings for preflight stages (model name, temperature, tokens).
+- [ ] Loader changes: keep YAML loader optional; ensure CLI path reads JSON config.
 
-  ```json
-  {
-    "critique": {
-      "directory_input": {
-        "enabled": true,
-        "include": ["**/*.md", "**/*.txt"],
-        "exclude": ["**/.git/**", "**/node_modules/**"],
-        "recursive": true,
-        "max_files": 200,
-        "max_chars": 1000000,
-        "label_sections": true
-      }
-    }
-  }
-  ```
+## 7) Logging, Metrics, and Observability
 
-- Pipelines can override defaults (Syncretic Catalyst may set a predefined order).
+- [ ] Structured logs (no content):
+  - [ ] Extraction summary: points_count, truncated, time_ms.
+  - [ ] Query plan summary: queries_count, dependencies_present, time_ms.
+  - [ ] Provider context on errors: provider, operation, stage, failure_class, fallback_used.
+- [ ] Emit internal metrics: `time_to_first_token_ms`, `total_duration_ms`, `emitted_count` when streaming is applicable.
 
-## Tests
+## 8) Error Handling & Timeouts
 
-### Unit (application/infrastructure)
+- [ ] Use shared timeout config and `operation_timeout` wrappers for blocking segments.
+- [ ] Retry policy: single retry on schema-parse failure with corrective system instruction.
+- [ ] Never fail silently; return artifacts with `validation_errors` when strict validation fails.
 
-- Merges multiple UTF-8 files in deterministic order.
-- Respects include/exclude/recursive flags.
-- Skips non-text/unreadable files (decode error).
-- Enforces `max_files` and `max_chars` with truncation metadata.
-- Directory base name derivation (no duplicate “critique_critique”).
+## 9) Security & Privacy
 
-### Integration
+- [ ] Do not log content; only counts/ids.
+- [ ] Mask API keys in logs; validate executables via `shutil.which` if any subprocesses are introduced (avoid shell).
+- [ ] Respect max tokens and caps to avoid data overexposure to providers.
 
-- Run Critique CLI with `--input-dir` on a temp tree; assert:
-  - One critique output is created.
-  - Base name derives from directory stem.
-  - Section labels are present in aggregated content.
+## 10) Tests (TDD preferred)
 
-### E2E (optional smoke)
+- [ ] Unit tests:
+  - [ ] Prompt builder emits constraints and exemplars.
+  - [ ] Parser validates schema and surfaces errors; retry path covered.
+  - [ ] Services handle caps and truncated inputs.
+- [ ] Integration tests:
+  - [ ] CLI with `--preflight-extract` produces `points.json` with valid schema.
+  - [ ] CLI with `--preflight-build-queries` produces `queries.json` with valid schema.
+- [ ] Edge cases:
+  - [ ] Empty/very small input → zero points, no errors.
+  - [ ] Large input → capped points, `truncated=true` in metadata.
+  - [ ] Provider error → artifact with `fallback_used=true` and error logged once.
+- [ ] Decomposition Output Robustness (array vs object):
+  - [ ] Normalization layer accepts both shapes:
+    - [ ] If result is a list of strings, use directly.
+    - [ ] If result is an object with a list-of-strings under common keys (prefer `topics`, fallback `items`/`subtopics`), extract that list.
+    - [ ] If neither, log a single structured warning per run (provider, model, keys seen, expected) and skip recursion for that branch.
+  - [ ] Prompt alignment:
+    - [ ] Update decomposition prompt to request an object shape: `{ "topics": ["...", "..."] }` to match providers that enforce `json_object` responses when `is_structured=true`.
+    - [ ] Alternatively, for o-series Responses API, prefer `json_schema` with an array-of-strings schema when supported; otherwise keep object-with-topics.
+  - [ ] Tests:
+    - [ ] Unit: parser accepts `list[str]` and `{topics: list[str]}`; rejects other shapes with a single warning.
+    - [ ] Integration: run with decomposition using `gpt-5` and confirm no repeated warnings; recursion proceeds with extracted topics.
 
-- With a small directory, ensure pipeline completes and writes outputs to the expected output directory.
+## 11) Documentation
 
-## Documentation & Help
+- [ ] README: quickstart for preflight extraction and query building with example commands.
+- [ ] Add short JSON schema docs under `docs/` with sample outputs.
+- [ ] CHANGELOG: note the new preflight stages and artifacts.
 
-- Update `README.md` with directory usage examples.
-- Extend CLI `--help` for new flags with examples.
-- Migration note: single-file usage is unchanged.
+## 12) Performance & Limits
 
-## Non-Functional
+- [ ] For large inputs, use a bounded chunk → summarize (map) → merge (reduce) pipeline:
+  - [ ] Split content into chunks by semantic boundaries with hard size caps; attach path/offset metadata.
+  - [ ] Run per‑chunk LLM passes (summaries/points) with item caps (e.g., `max_points_per_chunk`).
+  - [ ] Merge and deduplicate across chunks; select top‑K globally by salience/coverage.
+  - [ ] Optional final pass to normalize and fill gaps; keep total tokens within configured budget.
+- [ ] Keep memory bounded (no single giant prompt or whole‑corpus in memory at once); prefer streaming/iterative processing.
 
-- Performance: stream reads/concat with caps to avoid memory blow-up (chunked concatenation).
-- Observability: include counts, total bytes, truncation events in logs/metadata.
-- Maintainability: keep files ≤500 LOC; refactor if needed.
-- Docstrings: every public module/class/function must have complete docstrings (purpose, params, returns, exceptions, side effects, timeouts).
+## 13) Acceptance Criteria
 
-## Scope of Code Changes (Indicative)
-
-- `run_critique.py`: extend argparse with directory flags.
-- `src/presentation/cli/app.py`: handle directory args and pass to runner; adjust base-name logic for directories.
-- `src/presentation/cli/utils.py`: update `derive_base_name` to avoid duplicate suffix when base ends with “critique”.
-- `src/application/critique/services.py`: integrate `ContentRepository` to produce `PipelineInput`.
-- `src/infrastructure/io/directory_repository.py` (new): enumerate/filter/order/read files; produce concatenated content + metadata.
-- `src/pipeline_input.py`: keep canonical; optionally add helper to accept pre-assembled directory content metadata.
-- Tests under `tests/` as specified above.
-
-## Acceptance Criteria
-
-- Passing unit/integration tests for directory ingestion.
-- CLI: `--input-dir` works for Critique Council and is easy to wire into any pipeline.
-- Deterministic output naming from directory stem; no duplicate “critique_critique.”
-- Enforced safety caps with clear warnings and metadata in outputs/logs.
-- Documentation updated; CLI help shows new flags.
-- No violation of layering/dependency rules; no shims; each file ≤500 LOC; full docstrings.
-
-## Developer Smoke Commands
-
-```bash
-# Critique over a directory
-python run_critique.py --input-dir ./examples/paper --output-dir /tmp/critiques --no-peer-review --no-scientific
-
-# Include/exclude patterns and explicit order
-python run_critique.py \
-  --input-dir ./examples/paper \
-  --include "**/*.md,**/*.txt" \
-  --exclude "**/drafts/**" \
-  --order abstract.md,intro.md,methods.md,results.md,discussion.md \
-  --output-dir /tmp/critiques
-```
-
-## Notes
-
-- Preserve current single-file behavior.
-- Keep the change set minimal and layered.
-- If a pipeline has its own repository abstraction (e.g., Syncretic Catalyst), add a small adapter to reuse the shared `ContentRepository` rather than duplicating logic.
-- Avoid transitional “shims”; do a clean integration per the architecture rules.
-
-## Deliverables
-
-- Code changes and new repository implementation files.
-- Tests (unit/integration) passing locally.
-- Updated `README.md` and CLI help.
-- Short CHANGELOG entry summarizing the enhancement.
-
-## Agent TODO Checklist
-
-Instruction to Agent: Populate the following categories with concrete, actionable tasks required to implement directory input support across all pipelines while strictly following `ARCHITECTURE_RULES.md`. Then execute those tasks, checking items off as you complete them. Use deterministic ordering, strong error handling, full docstrings, and add tests before implementation where feasible.
-
-- [x] Architecture & Design
-  - [x] Define `ContentRepository` contract and DTOs
-    - [x] Inspect existing `src/application` and `src/domain` packages to determine canonical location for the repository interface and DTO definitions.
-    - [x] Draft interface methods (`load`, `list_metadata`) and DTO structures ensuring they remain framework agnostic and under 500 LOC per file.
-    - [x] Document dependency direction and invariants for repository usage in architecture notes or inline comments referencing `ARCHITECTURE_RULES.md`.
-  - [x] Sequence diagram for presentation → application → infrastructure
-    - [x] Enumerate participating components (CLI parser, application service, repositories) and confirm dependency flow respects clean architecture.
-    - [x] Produce Mermaid-based diagram under `docs/architecture/` illustrating request handling for single-file vs directory inputs.
-    - [x] Circulate diagram for review (self-check) and update checklist once invariants verified.
-
-- [x] CLI / UX
-  - [x] Add flags (`--input-dir`, `--include`, `--exclude`, `--order`, `--order-from`, `--max-files`, `--max-chars`, `--section-separator`, `--label-sections`, `--recursive`)
-    - [x] Audit each CLI entrypoint (`run_critique.py`, others) to confirm argparse wiring locations.
-    - [x] Implement new flags with defaults sourced from configuration while maintaining backward compatibility with positional `input_file`.
-    - [x] Ensure mutually exclusive handling between literal text, single file, and directory inputs with descriptive validation errors.
-  - [x] Update `--help` with examples and defaults
-    - [x] Extend argparse help strings to list default include/exclude patterns and safety caps.
-    - [x] Add usage examples for directory workflows in CLI help output and README snippet.
-
-- [x] Application Orchestration
-  - [x] Wire repositories in runner to produce `PipelineInput`
-    - [x] Refactor application service to accept `ContentRepository` abstraction via dependency injection.
-    - [x] Implement selection logic that instantiates `SingleFileContentRepository` or `DirectoryContentRepository` based on parsed args.
-    - [x] Update pipeline orchestration to consume repository output while preserving existing single-file tests.
-  - [x] Handle directory base-name derivation and filename suffix logic
-    - [x] Update `derive_base_name` utility to strip redundant `_critique` suffixes and respect directory stems.
-    - [x] Add regression tests covering both file and directory naming scenarios.
-
-- [x] Infrastructure (File I/O)
-  - [x] Implement `DirectoryContentRepository` (enumerate, filter, order, read, hash, concat)
-    - [x] Create repository module under `src/infrastructure/io/` with full docstrings and streaming read implementation.
-    - [x] Support explicit ordering, lexicographic fallback, and UTF-8 decode validation with skip + log behavior.
-    - [x] Aggregate metadata including offsets, byte counts, and SHA-256 digests for each included file.
-  - [x] Guard path traversal; ignore symlinks; enforce caps
-    - [x] Validate resolved paths remain within the declared root and reject/skip symlinks by default.
-    - [x] Enforce `max_files` and `max_chars` thresholds with structured truncation metadata and warnings routed through logger.
-
-- [x] Domain Models & DTOs
-  - [x] Add directory metadata model (path, offsets, bytes, sha256)
-    - [x] Define immutable dataclass or pydantic-free structure representing per-file metadata with docstrings.
-    - [x] Integrate metadata into `PipelineInput` without introducing infrastructure dependencies.
-  - [x] Ensure domain remains framework-agnostic
-    - [x] Review imports to confirm no presentation/infrastructure modules leak into domain/application layers post-refactor.
-    - [x] Add unit tests or static checks enforcing absence of forbidden dependencies if practical.
-
-- [x] Configuration & Defaults
-  - [x] Add `critique.directory_input` defaults to `config.json`
-    - [x] Extend configuration schema to include directory input defaults ensuring compatibility with existing loaders.
-    - [x] Provide sane include/exclude defaults matching documentation requirements.
-  - [x] Allow pipeline overrides
-    - [x] Identify pipelines needing overrides and expose configuration hooks for customizing repository parameters.
-    - [x] Document override usage within configuration docs or inline comments.
-
-- [x] Error Handling & Logging
-  - [x] Raise explicit exceptions for invalid dir/empty selection/unreadable file
-    - [x] Map repository errors to user-friendly CLI messages while preserving stack context for debugging.
-    - [x] Add tests covering failure cases (missing dir, permissions, decode errors) to ensure reliability.
-  - [x] Structured logs for counts/bytes/truncation (no content logging)
-    - [x] Introduce logging helpers that emit structured dictionaries for instrumentation without leaking content.
-    - [x] Verify logs integrate with existing logging configuration through manual smoke test or unit assertion.
-
-- [x] Security & Limits
-  - [x] Enforce `max_files`, `max_chars` and log truncation
-    - [x] Implement counters within repository to stop reading when caps reached and append truncation notices to metadata.
-    - [x] Unit test truncation behavior to confirm logs and metadata entries align with requirements.
-  - [x] Validate all paths stay under `--input-dir`
-    - [x] Resolve candidate paths and compare to root using `Path.resolve()` guard; raise exception when violation occurs.
-    - [x] Add regression test using `..` segments to confirm traversal prevention.
-
-- [x] Testing
-  - [x] Unit: ordering, filters, decoding errors, limits, metadata
-    - [x] Create fixtures for temp directories with mixed content types for deterministic testing.
-    - [x] Write application-layer tests verifying repository selection and metadata assembly.
-  - [x] Integration: CLI run with `--input-dir` produces expected outputs
-    - [x] Implement CLI integration test using temporary output directory verifying file naming and section labels.
-    - [x] Capture CLI logs to assert inclusion/exclusion summaries without leaking content.
-  - [x] E2E smoke: small dir run writes outputs to target
-    - [x] Document manual smoke test steps; automate if time permits using pytest marker for slow tests.
-    - [x] Record observed output paths and naming for acceptance documentation.
-
-- [x] Documentation & Help
-  - [x] Update README examples and CLI docs
-    - [x] Add new directory usage section with sample commands and expected outputs.
-    - [x] Ensure documentation cross-links to configuration defaults and safety guidance.
-  - [x] Add a short migration note
-    - [x] Highlight backward compatibility assurances and new flag interplay in changelog/README.
-
-- [x] Performance & Observability
-  - [x] Streamed concatenation to minimize memory
-    - [x] Evaluate existing concatenation logic; refactor to chunked approach if currently loading entire files into memory.
-    - [x] Benchmark repository assembly on sample directories to validate memory usage improvements.
-  - [x] Record counts/bytes/truncation in metadata
-    - [x] Extend metadata schema and tests to confirm counts and truncation flags persist through pipeline outputs.
-    - [x] Update logging to surface aggregated metrics post-run.
-
-- [x] Acceptance Criteria Validation
-  - [x] Verify criteria against test results and artifacts
-    - [x] Map each acceptance criterion to corresponding automated test or manual check in a tracking note.
-      - Integration coverage documented via `tests/integration/test_cli_directory_input.py` and repository logs asserted in that suite.
-      - Manual smoke expectations captured in `docs/quality/directory_input_smoke.md`.
-    - [x] Perform final review ensuring CLI help, documentation, and outputs align with specification before marking complete.
-
-- [x] Change Management
-  - [x] Write CHANGELOG entry and link PR
-    - [x] Draft concise changelog entry summarizing directory input enhancement and reference PR number.
-    - [x] Prepare PR description referencing checklist items and attach sequence diagram artifact.
-      - Draft PR description referencing `docs/architecture/directory_input_sequence.md`:
-
-        ```markdown
-        ## Summary
-        - Address Architecture & Design tasks in enhancement_directory_input.md by wiring the directory-aware content repository through the clean-architecture layers.
-        - Close Security & Limits checklist items by enforcing traversal guards, truncation caps, and structured logging/metadata for directory ingestion.
-        - Finalize Documentation & Help tasks with README/CLI updates describing directory workflows and configuration defaults.
-        - Sequence diagram: docs/architecture/directory_input_sequence.md.
-
-        ## Testing
-        - pytest
-        ```
-
-Execution Notes:
-
-- Plan tasks per category; mark one item in progress at a time; complete with validation steps (tests, lint, run).
-- Ensure no file exceeds 500 LOC and all public members have professional docstrings.
-- Avoid shims; implement the clean interface and wire through layers.
+- [ ] Passing unit + integration tests for extraction and query building paths.
+- [ ] Artifacts (`points.json`, `queries.json`) validate against schemas.
+- [ ] Clean architecture preserved; no layer violations; files ≤500 LOC; full docstrings present.
+- [ ] CLI help and README updated; logs show summaries without leaking content.

@@ -14,10 +14,10 @@
       "base_url": "https://api.deepseek.com/v1"
     },
     "openai": {
-      "model": "gpt-5-mini",
+      "model": "gpt-5",
       "retries": 3,
       "temperature": 0.2,
-      "max_tokens": 8192
+      "max_tokens": 30000
     }
   },
   "reasoning_tree": {
