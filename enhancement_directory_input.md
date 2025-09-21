@@ -101,10 +101,10 @@ Instruction to Coding Agent: Use this checklist to create concrete tasks and imp
     - [x] If neither, log a single structured warning per run (provider, model, keys seen, expected) and skip recursion for that branch.
   - [x] Prompt alignment:
     - [x] Update decomposition prompt to request an object shape: `{ "topics": ["...", "..."] }` to match providers that enforce `json_object` responses when `is_structured=true`.
-    - [ ] Alternatively, for o-series Responses API, prefer `json_schema` with an array-of-strings schema when supported; otherwise keep object-with-topics.
+    - [x] Alternatively, for o-series Responses API, prefer `json_schema` with an array-of-strings schema when supported; otherwise keep object-with-topics.
   - [ ] Tests:
     - [x] Unit: parser accepts `list[str]` and `{topics: list[str]}`; rejects other shapes with a single warning.
-    - [ ] Integration: run with decomposition using `gpt-5` and confirm no repeated warnings; recursion proceeds with extracted topics.
+    - [x] Integration: run with decomposition using `gpt-5` and confirm no repeated warnings; recursion proceeds with extracted topics.
 
 ## 11) Documentation
 

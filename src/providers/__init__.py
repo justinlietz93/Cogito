@@ -111,14 +111,46 @@ def _call_openai_with_retry(
     config: Mapping[str, Any] | None,
     *,
     is_structured: bool,
+    structured_output_schema: Mapping[str, Any] | None,
 ) -> Tuple[JsonLike, str]:
-    """Delegate to the OpenAI client while preserving the public signature."""
+    """Proxy requests to the OpenAI adapter with optional schema hints.
+
+    Parameters
+    ----------
+    prompt_template:
+        Prompt template containing ``str.format`` placeholders that will be
+        resolved with ``context``.
+    context:
+        Mapping of context values used to render ``prompt_template``.
+    config:
+        Hierarchical provider configuration used to determine retry and model
+        behaviour.
+    is_structured:
+        Indicates whether the caller expects JSON-serialisable responses.
+    structured_output_schema:
+        Optional JSON schema description forwarded to providers that support
+        schema-constrained outputs (currently the OpenAI Responses API).
+
+    Returns
+    -------
+    Tuple[JsonLike, str]
+        The parsed provider payload and the resolved model identifier.
+
+    Side Effects
+    ------------
+    None. The helper simply forwards to the OpenAI client implementation.
+    """
 
     return openai_client.call_openai_with_retry(
         prompt_template=prompt_template,
         context=dict(context or {}),
         config=dict(config or {}),
         is_structured=is_structured,
+        structured_output_schema=(
+            dict(structured_output_schema)
+            if structured_output_schema
+            else None
+        ),
     )
 
 
@@ -128,8 +160,14 @@ def _call_gemini_with_retry(
     config: Mapping[str, Any] | None,
     *,
     is_structured: bool,
+    structured_output_schema: Mapping[str, Any] | None,
 ) -> Tuple[JsonLike, str]:
-    """Delegate to the Gemini client while preserving the public signature."""
+    """Delegate calls to the Gemini adapter.
+
+    Parameters are equivalent to :func:`_call_openai_with_retry`. The Gemini
+    integration currently ignores ``structured_output_schema`` because the
+    underlying SDK does not yet expose JSON schema controls.
+    """
 
     return gemini_client.call_gemini_with_retry(
         prompt_template=prompt_template,
@@ -167,8 +205,14 @@ def _call_anthropic_with_retry(
     config: Mapping[str, Any] | None,
     *,
     is_structured: bool,
+    structured_output_schema: Mapping[str, Any] | None,
 ) -> Tuple[JsonLike, str]:
-    """Execute the Anthropic client with prompt formatting and JSON parsing."""
+    """Execute the Anthropic client with prompt formatting and JSON parsing.
+
+    The ``structured_output_schema`` parameter is accepted for parity with the
+    other provider helpers but is not currently consumed by the Anthropic
+    adapter.
+    """
 
     api_section = _get_api_section(config or {})
     provider_cfg = _get_provider_config(api_section, "anthropic")
@@ -224,8 +268,16 @@ def call_with_retry(
     context: Mapping[str, Any] | None,
     config: Mapping[str, Any] | None,
     is_structured: bool = False,
+    *,
+    structured_output_schema: Mapping[str, Any] | None = None,
 ) -> Tuple[JsonLike, str]:
-    """Dispatch prompt execution to the configured primary provider."""
+    """Dispatch prompt execution to the configured primary provider.
+
+    Parameters mirror those of the provider-specific helpers. When provided,
+    ``structured_output_schema`` is forwarded verbatim, enabling callers to
+    request schema-enforced structured responses on providers that support the
+    capability.
+    """
 
     api_section = _get_api_section(config or {})
     provider = _normalise_provider(api_section.get("primary_provider"))
@@ -239,4 +291,5 @@ def call_with_retry(
         context=context,
         config=config,
         is_structured=is_structured,
+        structured_output_schema=structured_output_schema,
     )

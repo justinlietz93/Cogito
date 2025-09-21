@@ -1,11 +1,26 @@
 # src/critique_module/reasoning_tree.py
 
-"""
-Implements the recursive reasoning tree logic for critique generation.
+"""Recursive reasoning tree orchestration for critique generation.
+
+Purpose:
+    Drive the critique workflow by recursively delegating analysis tasks to
+    language-model providers while capturing structured assessments and
+    decomposition topics for follow-up passes.
+External Dependencies:
+    Depends on :mod:`src.providers` for model execution via ``call_with_retry``.
+    No direct HTTP clients are instantiated here.
+Fallback Semantics:
+    Provider exceptions are logged and terminate the current branch without
+    raising to callers; downstream logic continues operating on remaining
+    branches.
+Timeout Strategy:
+    Timeout management is delegated to the provider adapters referenced through
+    ``call_with_retry``. The module itself does not implement additional
+    timeout logic.
 """
 
 import logging
-from typing import Dict, List, Any, Optional, Sequence
+from typing import Dict, List, Any, Optional, Sequence, Mapping
 import uuid
 import json
 
@@ -19,6 +34,65 @@ DEFAULT_CONFIDENCE_THRESHOLD = 0.3
 module_logger = logging.getLogger(__name__)
 
 _DECOMPOSITION_TOPIC_KEYS: Sequence[str] = ("topics", "items", "subtopics")
+
+
+def _should_request_topic_array_schema(config: Mapping[str, Any]) -> bool:
+    """Determine whether decomposition should request an array-only schema.
+
+    Parameters
+    ----------
+    config:
+        Application configuration containing provider and model selections.
+
+    Returns
+    -------
+    bool
+        ``True`` when the configured primary provider is OpenAI and the
+        selected model identifier corresponds to an o-series Responses API
+        model, otherwise ``False``.
+
+    Raises
+    ------
+    None.
+
+    Side Effects
+    ------------
+    None. The helper performs pure dictionary inspection.
+    """
+
+    api_section = config.get("api", {}) if isinstance(config, Mapping) else {}
+    if not isinstance(api_section, Mapping):
+        return False
+
+    provider = str(api_section.get("primary_provider", "")).strip().lower()
+    if provider != "openai":
+        return False
+
+    provider_config: Mapping[str, Any] | None = None
+    providers_section = api_section.get("providers")
+    if isinstance(providers_section, Mapping):
+        candidate = providers_section.get("openai")
+        if isinstance(candidate, Mapping):
+            provider_config = candidate
+
+    if provider_config is None:
+        candidate = api_section.get("openai")
+        if isinstance(candidate, Mapping):
+            provider_config = candidate
+
+    model_name = ""
+    if provider_config is not None:
+        raw_model = provider_config.get("model") or provider_config.get("model_name")
+        if isinstance(raw_model, str):
+            model_name = raw_model.strip().lower()
+
+    if not model_name:
+        return False
+
+    if len(model_name) > 1 and model_name[0] == "o" and model_name[1].isdigit():
+        return True
+
+    return model_name in {"o1", "o1-mini", "o1-preview", "o3", "o3-mini"}
 
 
 def _normalise_decomposition_topics(result: Any) -> tuple[List[str], Optional[Sequence[str]], Optional[str]]:
@@ -197,11 +271,25 @@ Return a JSON object with a "topics" field containing an array of concise string
         "content": initial_content
     }
     try:
+        structured_schema: Optional[Dict[str, Any]] = None
+        if _should_request_topic_array_schema(config):
+            structured_schema = {
+                "name": "decomposition_topics",
+                "schema": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "List of sub-topic strings describing where to recurse in the "
+                        "next critique depth."
+                    ),
+                },
+            }
         decomposition_result, model_used_for_decomposition = call_with_retry(
             prompt_template=decomposition_prompt_template,
             context=decomposition_context,
             config=config,
-            is_structured=True
+            is_structured=True,
+            structured_output_schema=structured_schema,
         )
         provider_name = (
             config.get("api", {}).get("primary_provider")
