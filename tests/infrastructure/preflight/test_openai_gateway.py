@@ -19,6 +19,8 @@ from src.pipeline_input import PipelineInput
 
 LOGGER = logging.getLogger(__name__)
 
+LONG_CONTENT = "Example content " * 6
+
 
 class DummyCall:
     """Test double that simulates the OpenAI client."""
@@ -119,6 +121,40 @@ def _make_valid_query_payload() -> Dict[str, Any]:
     }
 
 
+def test_point_extractor_returns_empty_result_for_blank_input() -> None:
+    LOGGER.info("Verifying extractor short-circuits for empty pipeline input.")
+    """Ensure blank content returns no points without contacting the provider."""
+
+    call = DummyCall([_make_valid_extraction_payload()])
+    gateway = OpenAIPointExtractorGateway(call_model=call, config={})
+    pipeline_input = PipelineInput(content="   ", source="unit-test")
+
+    result = gateway.extract_points(pipeline_input)
+
+    assert call.calls == []
+    assert result.points == ()
+    assert result.validation_errors == ()
+    assert result.truncated is False
+    assert result.source_stats["skip_reason"] == "empty_content"
+
+
+def test_point_extractor_skips_when_content_below_threshold() -> None:
+    LOGGER.info("Ensuring extractor avoids model calls for very small content blocks.")
+    """Confirm minimal content triggers a skipped result with diagnostics."""
+
+    call = DummyCall([_make_valid_extraction_payload()])
+    gateway = OpenAIPointExtractorGateway(call_model=call, config={})
+    pipeline_input = PipelineInput(content="Short summary.", source="unit-test")
+
+    result = gateway.extract_points(pipeline_input)
+
+    assert call.calls == []
+    assert result.points == ()
+    assert result.validation_errors == ()
+    assert result.truncated is False
+    assert result.source_stats["skip_reason"] == "content_below_min_threshold"
+
+
 def test_point_extractor_success_single_attempt() -> None:
     LOGGER.info("Validating extractor returns structured result on first attempt.")
     """Verify success when the initial extraction attempt is valid.
@@ -138,13 +174,29 @@ def test_point_extractor_success_single_attempt() -> None:
 
     call = DummyCall([_make_valid_extraction_payload()])
     gateway = OpenAIPointExtractorGateway(call_model=call, config={})
-    pipeline_input = PipelineInput(content="Example content", source="unit-test")
+    pipeline_input = PipelineInput(content=LONG_CONTENT, source="unit-test")
 
     result = gateway.extract_points(pipeline_input)
 
     assert len(call.calls) == 1
     assert result.points[0].id == "p-1"
     assert result.validation_errors == ()
+
+
+def test_point_extractor_marks_truncated_when_limit_reached() -> None:
+    LOGGER.info("Checking extractor flags truncation when limits cap the output size.")
+    """Ensure hitting max_points marks the extraction result as truncated."""
+
+    payload = _make_valid_extraction_payload()
+    payload["truncated"] = False
+    call = DummyCall([payload])
+    gateway = OpenAIPointExtractorGateway(call_model=call, config={}, max_retries=0)
+    pipeline_input = PipelineInput(content="Long content " * 20, source="unit-test")
+
+    result = gateway.extract_points(pipeline_input, max_points=1)
+
+    assert result.truncated is True
+    assert result.source_stats["characters"] == len(pipeline_input.content)
 
 
 def test_point_extractor_retries_on_validation_error() -> None:
@@ -167,7 +219,7 @@ def test_point_extractor_retries_on_validation_error() -> None:
     invalid = "{invalid json"
     call = DummyCall([invalid, _make_valid_extraction_payload()])
     gateway = OpenAIPointExtractorGateway(call_model=call, config={}, max_retries=1)
-    pipeline_input = PipelineInput(content="Example content", source="unit-test")
+    pipeline_input = PipelineInput(content=LONG_CONTENT, source="unit-test")
 
     result = gateway.extract_points(pipeline_input)
 
@@ -199,7 +251,7 @@ def test_point_extractor_returns_fallback_after_retry_failure(
     invalid_second = json.dumps({"points": []})
     call = DummyCall([invalid_first, invalid_second])
     gateway = OpenAIPointExtractorGateway(call_model=call, config={}, max_retries=1)
-    pipeline_input = PipelineInput(content="Example content", source="unit-test")
+    pipeline_input = PipelineInput(content=LONG_CONTENT, source="unit-test")
 
     caplog.set_level(logging.WARNING, logger="src.infrastructure.preflight.openai_gateway")
     result = gateway.extract_points(pipeline_input)
@@ -214,6 +266,28 @@ def test_point_extractor_returns_fallback_after_retry_failure(
         if record.name == "src.infrastructure.preflight.openai_gateway"
     ]
     assert any("event=provider_fallback_returned" in message for message in fallback_logs)
+
+
+def test_point_extractor_emits_single_fallback_log(caplog: pytest.LogCaptureFixture) -> None:
+    LOGGER.info("Validating fallback logging occurs exactly once per extraction run.")
+    """Ensure fallback diagnostics are emitted a single time when retries fail."""
+
+    invalid_first = "not json"
+    invalid_second = json.dumps({"points": []})
+    call = DummyCall([invalid_first, invalid_second])
+    gateway = OpenAIPointExtractorGateway(call_model=call, config={}, max_retries=1)
+    pipeline_input = PipelineInput(content=LONG_CONTENT, source="unit-test")
+
+    caplog.set_level(logging.WARNING, logger="src.infrastructure.preflight.openai_gateway")
+    result = gateway.extract_points(pipeline_input)
+
+    fallback_logs = [
+        record.message
+        for record in caplog.records
+        if "event=provider_fallback_returned" in record.message
+    ]
+    assert len(fallback_logs) == 1
+    assert result.validation_errors
 
 
 def test_point_extractor_honours_metadata_overrides() -> None:
@@ -235,7 +309,7 @@ def test_point_extractor_honours_metadata_overrides() -> None:
 
     call = DummyCall([_make_valid_extraction_payload()])
     gateway = OpenAIPointExtractorGateway(call_model=call, config={}, max_retries=0)
-    pipeline_input = PipelineInput(content="Example content", source="unit-test")
+    pipeline_input = PipelineInput(content=LONG_CONTENT, source="unit-test")
 
     gateway.extract_points(
         pipeline_input,
@@ -269,7 +343,7 @@ def test_point_extractor_applies_configured_token_cap() -> None:
         config={"api": {"openai": {"max_tokens": 2048}}},
         max_retries=0,
     )
-    pipeline_input = PipelineInput(content="Example content", source="unit-test")
+    pipeline_input = PipelineInput(content=LONG_CONTENT, source="unit-test")
 
     gateway.extract_points(pipeline_input)
 
@@ -296,7 +370,7 @@ def test_point_extractor_uses_default_token_cap_when_missing() -> None:
 
     call = DummyCall([_make_valid_extraction_payload()])
     gateway = OpenAIPointExtractorGateway(call_model=call, config={}, max_retries=0)
-    pipeline_input = PipelineInput(content="Example content", source="unit-test")
+    pipeline_input = PipelineInput(content=LONG_CONTENT, source="unit-test")
 
     gateway.extract_points(pipeline_input)
 
@@ -431,7 +505,7 @@ def test_point_extractor_logs_timeout_error(caplog: pytest.LogCaptureFixture) ->
         raise TimeoutError("simulated timeout")
 
     gateway = OpenAIPointExtractorGateway(call_model=raising_call, config={}, max_retries=0)
-    pipeline_input = PipelineInput(content="Example content", source="unit-test")
+    pipeline_input = PipelineInput(content=LONG_CONTENT, source="unit-test")
 
     caplog.set_level(logging.ERROR, logger="src.infrastructure.preflight.openai_gateway")
     with pytest.raises(TimeoutError):

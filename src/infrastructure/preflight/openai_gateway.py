@@ -54,6 +54,7 @@ _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_PROVIDER_TIMEOUT_SECONDS = 60.0
 DEFAULT_MAX_OUTPUT_TOKENS = 4096
+MINIMUM_CONTENT_CHARACTERS = 50
 
 
 JsonLike = Any
@@ -649,6 +650,28 @@ class OpenAIPointExtractorGateway(_OpenAIPreflightGatewayBase, PointExtractorGat
             Enforced per request using :func:`operation_timeout`.
         """
 
+        stripped_content = pipeline_input.content.strip()
+        total_characters = len(pipeline_input.content)
+        if len(stripped_content) < MINIMUM_CONTENT_CHARACTERS:
+            source_stats: dict[str, object] = {
+                "characters": total_characters,
+                "skipped": True,
+                "skip_reason": "empty_content"
+                if not stripped_content
+                else "content_below_min_threshold",
+            }
+            metadata_view = pipeline_input.metadata or {}
+            if metadata_view.get("truncated"):
+                source_stats["input_truncated"] = True
+                truncation_reason = metadata_view.get("truncation_reason")
+                if truncation_reason:
+                    source_stats["input_truncation_reason"] = str(truncation_reason)
+            return ExtractionResult(
+                points=(),
+                source_stats=source_stats,
+                truncated=False,
+            )
+
         schema = self._schema_loader()
         prompt_bundle = self._prompt_builder(
             pipeline_input,
@@ -656,12 +679,33 @@ class OpenAIPointExtractorGateway(_OpenAIPreflightGatewayBase, PointExtractorGat
             max_points=max_points,
         )
         metadata_copy = dict(metadata) if metadata is not None else None
-        return self._execute_with_retries(
+        result = self._execute_with_retries(
             system_message=prompt_bundle.system,
             user_message=prompt_bundle.user,
             parser=self._parser,
             metadata=metadata_copy,
             operation_name="preflight_extraction",
+        )
+
+        enriched_stats = dict(result.source_stats or {})
+        enriched_stats["characters"] = total_characters
+        metadata_view = pipeline_input.metadata or {}
+        if metadata_view.get("truncated") and "input_truncated" not in enriched_stats:
+            enriched_stats["input_truncated"] = True
+            truncation_reason = metadata_view.get("truncation_reason")
+            if truncation_reason and "input_truncation_reason" not in enriched_stats:
+                enriched_stats["input_truncation_reason"] = str(truncation_reason)
+
+        truncated = result.truncated
+        if not truncated and max_points is not None and len(result.points) >= max_points:
+            truncated = True
+
+        return ExtractionResult(
+            points=result.points,
+            source_stats=enriched_stats,
+            truncated=truncated,
+            raw_response=result.raw_response,
+            validation_errors=result.validation_errors,
         )
 
 

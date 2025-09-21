@@ -23,7 +23,7 @@ def stub_call_with_retry(monkeypatch):
 
     def _fake_call(prompt_template, context, config, is_structured=False):
         if "Based on the primary critique claim" in prompt_template:
-            return (["Topic A", "Topic B"], "stub-model")
+            return ({"topics": ["Topic A", "Topic B"]}, "stub-model")
         return (
             {
                 "claim": "Stub claim",
@@ -276,6 +276,60 @@ def test_tree_handles_unexpected_decomposition_error(base_config, monkeypatch, c
     assert any('Unexpected error during decomposition' in message for message in caplog.messages)
 
 
+def test_tree_accepts_list_based_decomposition(base_config, monkeypatch, caplog):
+    """Lists of strings from the decomposition provider should remain supported."""
+
+    def _call_with_retry(prompt_template, context, config, is_structured=False):
+        if 'Based on the primary critique claim' in prompt_template:
+            return (["Topic 1", "Topic 2"], 'stub-model')
+        return (
+            {
+                'claim': 'Primary finding',
+                'evidence': 'Detailed evidence',
+                'confidence': 0.9,
+                'severity': 'high',
+                'recommendation': 'Action',
+                'concession': 'None',
+            },
+            'assessment-model',
+        )
+
+    monkeypatch.setattr('src.reasoning_tree.call_with_retry', _call_with_retry)
+
+    with caplog.at_level('INFO', logger='src.reasoning_tree'):
+        result = execute_reasoning_tree('Extensive content segment.' * 5, STYLE_DIRECTIVES, 'TestAgent', base_config)
+
+    assert result is not None
+    assert any('Identified 2 sub-topics for recursion.' in message for message in caplog.messages)
+
+
+def test_tree_accepts_alternative_topic_keys(base_config, monkeypatch, caplog):
+    """Mappings with "items" or "subtopics" keys should normalise correctly."""
+
+    def _call_with_retry(prompt_template, context, config, is_structured=False):
+        if 'Based on the primary critique claim' in prompt_template:
+            return ({'items': ['Topic 1']}, 'stub-model')
+        return (
+            {
+                'claim': 'Primary finding',
+                'evidence': 'Detailed evidence',
+                'confidence': 0.9,
+                'severity': 'high',
+                'recommendation': 'Action',
+                'concession': 'None',
+            },
+            'assessment-model',
+        )
+
+    monkeypatch.setattr('src.reasoning_tree.call_with_retry', _call_with_retry)
+
+    with caplog.at_level('INFO', logger='src.reasoning_tree'):
+        result = execute_reasoning_tree('Extensive content segment.' * 5, STYLE_DIRECTIVES, 'TestAgent', base_config)
+
+    assert result is not None
+    assert any('Identified 1 sub-topics for recursion.' in message for message in caplog.messages)
+
+
 def test_tree_warns_on_invalid_decomposition_structure(base_config, caplog, monkeypatch):
     """Unexpected decomposition results should trigger a warning."""
 
@@ -300,7 +354,10 @@ def test_tree_warns_on_invalid_decomposition_structure(base_config, caplog, monk
         result = execute_reasoning_tree('Extensive content segment.' * 5, STYLE_DIRECTIVES, 'TestAgent', base_config)
 
     assert result is not None
-    assert any('Unexpected decomposition structure' in message for message in caplog.messages)
+    warnings = [message for message in caplog.messages if 'Unexpected decomposition structure' in message]
+    assert len(warnings) == 1
+    assert 'provider=' in warnings[0]
+    assert 'keys=invalid' in warnings[0]
 
 
 def test_run_example_executes_without_error(caplog):

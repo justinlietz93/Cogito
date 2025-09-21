@@ -90,20 +90,20 @@ Instruction to Coding Agent: Use this checklist to create concrete tasks and imp
 - [x] Integration tests:
   - [x] CLI with `--preflight-extract` produces `points.json` with valid schema.
   - [x] CLI with `--preflight-build-queries` produces `queries.json` with valid schema.
-- [ ] Edge cases:
-  - [ ] Empty/very small input → zero points, no errors.
-  - [ ] Large input → capped points, `truncated=true` in metadata.
-  - [ ] Provider error → artifact with `fallback_used=true` and error logged once.
-- [ ] Decomposition Output Robustness (array vs object):
-  - [ ] Normalization layer accepts both shapes:
-    - [ ] If result is a list of strings, use directly.
-    - [ ] If result is an object with a list-of-strings under common keys (prefer `topics`, fallback `items`/`subtopics`), extract that list.
-    - [ ] If neither, log a single structured warning per run (provider, model, keys seen, expected) and skip recursion for that branch.
-  - [ ] Prompt alignment:
-    - [ ] Update decomposition prompt to request an object shape: `{ "topics": ["...", "..."] }` to match providers that enforce `json_object` responses when `is_structured=true`.
+- [x] Edge cases:
+  - [x] Empty/very small input → zero points, no errors.
+  - [x] Large input → capped points, `truncated=true` in metadata.
+  - [x] Provider error → artifact with `fallback_used=true` and error logged once.
+- [x] Decomposition Output Robustness (array vs object):
+  - [x] Normalization layer accepts both shapes:
+    - [x] If result is a list of strings, use directly.
+    - [x] If result is an object with a list-of-strings under common keys (prefer `topics`, fallback `items`/`subtopics`), extract that list.
+    - [x] If neither, log a single structured warning per run (provider, model, keys seen, expected) and skip recursion for that branch.
+  - [x] Prompt alignment:
+    - [x] Update decomposition prompt to request an object shape: `{ "topics": ["...", "..."] }` to match providers that enforce `json_object` responses when `is_structured=true`.
     - [ ] Alternatively, for o-series Responses API, prefer `json_schema` with an array-of-strings schema when supported; otherwise keep object-with-topics.
   - [ ] Tests:
-    - [ ] Unit: parser accepts `list[str]` and `{topics: list[str]}`; rejects other shapes with a single warning.
+    - [x] Unit: parser accepts `list[str]` and `{topics: list[str]}`; rejects other shapes with a single warning.
     - [ ] Integration: run with decomposition using `gpt-5` and confirm no repeated warnings; recursion proceeds with extracted topics.
 
 ## 11) Documentation
