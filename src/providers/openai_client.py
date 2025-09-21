@@ -21,7 +21,7 @@ import logging
 import json
 import time
 import os
-from typing import Dict, Any, Tuple, Optional, List, Union
+from typing import Dict, Any, Tuple, Optional, List, Union, Mapping
 from openai import OpenAI
 from .exceptions import ModelCallError, MaxRetriesExceededError
 
@@ -112,6 +112,8 @@ def call_openai_with_retry(
     context: Dict[str, Any],
     config: Dict[str, Any],
     is_structured: bool = False,
+    *,
+    structured_output_schema: Mapping[str, Any] | None = None,
     **kwargs
 ) -> Tuple[Union[str, Dict[str, Any]], str]:
     """Execute an OpenAI request with structured retries and parsing rules.
@@ -125,6 +127,8 @@ def call_openai_with_retry(
             defaults sourced from application settings.
         is_structured: Indicates whether the caller expects JSON output that
             should be parsed into a Python object.
+        structured_output_schema: Optional JSON schema payload forwarded when
+            using the Responses API to enforce an array or object contract.
         **kwargs: Optional overrides such as ``system_message`` or
             ``max_tokens``/``max_completion_tokens`` supplied by upstream
             services.
@@ -200,6 +204,25 @@ def call_openai_with_retry(
     
     if is_response_api_model:
         # o1 models use the responses.create API with a completely different structure
+        response_format: Dict[str, Any]
+        if is_structured and structured_output_schema:
+            schema_name = str(structured_output_schema.get("name", "structured_output"))
+            schema_body = structured_output_schema.get("schema")
+            if isinstance(schema_body, Mapping):
+                response_format = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": schema_name,
+                        "schema": dict(schema_body),
+                    },
+                }
+            else:
+                response_format = {"type": "json_object"}
+        elif is_structured:
+            response_format = {"type": "json_object"}
+        else:
+            response_format = {"type": "text"}
+
         o1_params = {
             "model": default_model,
             # Prepend system message to formatted prompt for o1 models since they don't have a separate system message parameter
@@ -215,9 +238,7 @@ def call_openai_with_retry(
                 }
             ],
             "text": {
-                "format": {
-                    "type": "json_object" if is_structured else "text"
-                }
+                "format": response_format
             },
             "reasoning": {
                 "effort": openai_config.get('reasoning_effort', "high")

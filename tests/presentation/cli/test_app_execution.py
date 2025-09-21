@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,9 +11,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.application.critique.exceptions import ConfigurationError, MissingApiKeyError
+from src.application.preflight.orchestrator import PreflightOptions, PreflightRunResult
 from src.application.user_settings.services import SettingsPersistenceError
+from src.domain.preflight import ExtractionResult, QueryPlan
 from src.pipeline_input import EmptyPipelineInputError, PipelineInput
 from src.presentation.cli.app import DirectoryInputDefaults
+from src.presentation.cli.preflight import PreflightCliDefaults
 
 from .helpers import FakeSettings, FakeSettingsService, make_app
 
@@ -409,6 +413,126 @@ def test_execute_run_handles_settings_persistence_error(tmp_path: Path) -> None:
     )
 
     assert any("Failed to remember output directory" in msg for msg in messages)
+
+
+def test_execute_run_passes_preflight_options(tmp_path: Path) -> None:
+    defaults = PreflightCliDefaults(
+        extract_enabled=False,
+        query_enabled=False,
+        max_points=7,
+        max_queries=5,
+        points_artifact="artifacts/points.json",
+        queries_artifact="artifacts/queries.json",
+    )
+    pipeline_input = PipelineInput(content="body")
+    runner = MagicMock()
+    runner.run.return_value = SimpleNamespace(
+        critique_report="report",
+        peer_review_enabled=False,
+        scientific_mode_enabled=False,
+        module_config={},
+        pipeline_input=pipeline_input,
+        preflight=None,
+    )
+    app, _messages, _service, runner, _prompts = make_app(
+        critique_runner=runner,
+        preflight_defaults=defaults,
+    )
+
+    args = SimpleNamespace(
+        input_file=pipeline_input,
+        output_dir=str(tmp_path),
+        peer_review=None,
+        scientific_mode=None,
+        latex=False,
+        latex_compile=False,
+        latex_output_dir=None,
+        latex_scientific_level="high",
+        direct_latex=False,
+        remember_output=False,
+        preflight_extract=True,
+        preflight_build_queries=True,
+        points_out="custom_points.json",
+        queries_out="custom_queries.json",
+        max_points=3,
+        max_queries=2,
+    )
+
+    app.run(args, interactive=False)
+
+    assert runner.run.call_count == 1
+    options: PreflightOptions = runner.run.call_args.kwargs["preflight_options"]
+    assert isinstance(options, PreflightOptions)
+    assert options.enable_extraction is True
+    assert options.enable_query_building is True
+    assert options.max_points == 3
+    assert options.max_queries == 2
+    assert options.extraction_artifact_name == "custom_points.json"
+    assert options.query_artifact_name == "custom_queries.json"
+
+
+def test_execute_run_persists_preflight_artifacts(tmp_path: Path) -> None:
+    defaults = PreflightCliDefaults(
+        extract_enabled=True,
+        query_enabled=True,
+        points_artifact="artifacts/points.json",
+        queries_artifact="artifacts/queries.json",
+    )
+    pipeline_input = PipelineInput(content="body", metadata={})
+    preflight_result = PreflightRunResult(
+        extraction=ExtractionResult(),
+        query_plan=QueryPlan(),
+        artifact_paths={"extraction": "points.json", "query_plan": "queries.json"},
+    )
+    runner = MagicMock()
+    runner.run.return_value = SimpleNamespace(
+        critique_report="report",
+        peer_review_enabled=False,
+        scientific_mode_enabled=False,
+        module_config={},
+        pipeline_input=pipeline_input,
+        preflight=preflight_result,
+    )
+    app, messages, _service, runner, _prompts = make_app(
+        critique_runner=runner,
+        preflight_defaults=defaults,
+    )
+
+    args = SimpleNamespace(
+        input_file=pipeline_input,
+        output_dir=str(tmp_path),
+        peer_review=None,
+        scientific_mode=None,
+        latex=False,
+        latex_compile=False,
+        latex_output_dir=None,
+        latex_scientific_level="high",
+        direct_latex=False,
+        remember_output=False,
+        preflight_extract=True,
+        preflight_build_queries=True,
+        points_out=None,
+        queries_out=None,
+        max_points=None,
+        max_queries=None,
+    )
+
+    app.run(args, interactive=False)
+
+    extraction_path = tmp_path / "points.json"
+    query_path = tmp_path / "queries.json"
+    assert extraction_path.exists()
+    assert query_path.exists()
+
+    extraction_payload = json.loads(extraction_path.read_text(encoding="utf-8"))
+    query_payload = json.loads(query_path.read_text(encoding="utf-8"))
+    assert extraction_payload["points"] == []
+    assert query_payload["queries"] == []
+    assert any("Preflight points saved" in msg for msg in messages)
+    assert any("Preflight queries saved" in msg for msg in messages)
+    metadata = pipeline_input.metadata["preflight_artifacts"]
+    assert metadata["extraction"] == str(extraction_path)
+    assert metadata["query_plan"] == str(query_path)
 
 def test_directory_request_uses_default_order_file(tmp_path: Path) -> None:
     """Ensure CLI directory requests fall back to configured order files."""
