@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cogito.ai/schemas/preflight/query_plan.schema.json",
+  "title": "QueryPlan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["queries", "rationale"],
+  "properties": {
+    "queries": {
+      "type": "array",
+      "description": "Ordered list of follow-up queries to execute.",
+      "items": {
+        "$ref": "#/$defs/built_query"
+      }
+    },
+    "rationale": {
+      "type": "string",
+      "description": "Overall strategy behind the query plan.",
+      "default": ""
+    },
+    "assumptions": {
+      "type": "array",
+      "description": "Optional assumptions that informed the plan.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": []
+    },
+    "risks": {
+      "type": "array",
+      "description": "Optional risks associated with the plan.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": []
+    }
+  },
+  "$defs": {
+    "built_query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text",
+        "purpose",
+        "priority"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the query."
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Natural language query text."
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Explanation of why the query is needed."
+        },
+        "priority": {
+          "type": "integer",
+          "description": "Execution priority where lower numbers run earlier."
+        },
+        "depends_on_ids": {
+          "type": "array",
+          "description": "Identifiers of prerequisite queries.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        },
+        "target_audience": {
+          "type": ["string", "null"],
+          "description": "Intended respondent or system for the query."
+        },
+        "suggested_tooling": {
+          "type": "array",
+          "description": "Preferred tooling identifiers to satisfy the query.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      }
+    }
+  }
+}

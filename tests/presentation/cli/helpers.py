@@ -7,6 +7,7 @@ from typing import Callable, Dict, Iterable, List, Tuple
 from unittest.mock import MagicMock
 
 from src.presentation.cli.app import CliApp, DirectoryInputDefaults
+from src.presentation.cli.preflight import PreflightCliDefaults
 
 
 class FakeSettings:
@@ -110,6 +111,7 @@ def make_app(
     settings_service: FakeSettingsService | None = None,
     critique_runner: MagicMock | None = None,
     directory_defaults: DirectoryInputDefaults | None = None,
+    preflight_defaults: PreflightCliDefaults | None = None,
 ) -> Tuple[CliApp, List[str], FakeSettingsService, MagicMock, List[str]]:
     """Create a :class:`CliApp` wired with fake dependencies for testing."""
 
@@ -122,6 +124,7 @@ def make_app(
         service,
         runner,
         directory_defaults=directory_defaults,
+        preflight_defaults=preflight_defaults,
         input_func=input_func,
         output_func=messages.append,
     )

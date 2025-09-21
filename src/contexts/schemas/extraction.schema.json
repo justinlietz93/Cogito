@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cogito.ai/schemas/preflight/extraction.schema.json",
+  "title": "ExtractionResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["points", "source_stats", "truncated"],
+  "properties": {
+    "points": {
+      "type": "array",
+      "description": "Ordered list of extracted points ranked by relevance.",
+      "items": {
+        "$ref": "#/$defs/extracted_point"
+      }
+    },
+    "source_stats": {
+      "type": "object",
+      "description": "Metadata describing the analysed corpus and extraction run.",
+      "additionalProperties": true
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "Whether the extractor truncated points due to caps or token limits."
+    }
+  },
+  "$defs": {
+    "extracted_point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "summary",
+        "evidence_refs",
+        "confidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the point."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Concise heading describing the point."
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Multi-sentence summary elaborating on the point."
+        },
+        "evidence_refs": {
+          "type": "array",
+          "description": "References supporting the point (paths, citations, etc.).",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Normalised confidence score between 0.0 and 1.0."
+        },
+        "tags": {
+          "type": "array",
+          "description": "Optional thematic tags assigned to the point.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      }
+    }
+  }
+}

@@ -1,11 +1,26 @@
 # src/critique_module/reasoning_tree.py
 
-"""
-Implements the recursive reasoning tree logic for critique generation.
+"""Recursive reasoning tree orchestration for critique generation.
+
+Purpose:
+    Drive the critique workflow by recursively delegating analysis tasks to
+    language-model providers while capturing structured assessments and
+    decomposition topics for follow-up passes.
+External Dependencies:
+    Depends on :mod:`src.providers` for model execution via ``call_with_retry``.
+    No direct HTTP clients are instantiated here.
+Fallback Semantics:
+    Provider exceptions are logged and terminate the current branch without
+    raising to callers; downstream logic continues operating on remaining
+    branches.
+Timeout Strategy:
+    Timeout management is delegated to the provider adapters referenced through
+    ``call_with_retry``. The module itself does not implement additional
+    timeout logic.
 """
 
 import logging
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Sequence, Mapping
 import uuid
 import json
 
@@ -18,6 +33,101 @@ DEFAULT_CONFIDENCE_THRESHOLD = 0.3
 
 module_logger = logging.getLogger(__name__)
 
+_DECOMPOSITION_TOPIC_KEYS: Sequence[str] = ("topics", "items", "subtopics")
+
+
+def _should_request_topic_array_schema(config: Mapping[str, Any]) -> bool:
+    """Determine whether decomposition should request an array-only schema.
+
+    Parameters
+    ----------
+    config:
+        Application configuration containing provider and model selections.
+
+    Returns
+    -------
+    bool
+        ``True`` when the configured primary provider is OpenAI and the
+        selected model identifier corresponds to an o-series Responses API
+        model, otherwise ``False``.
+
+    Raises
+    ------
+    None.
+
+    Side Effects
+    ------------
+    None. The helper performs pure dictionary inspection.
+    """
+
+    api_section = config.get("api", {}) if isinstance(config, Mapping) else {}
+    if not isinstance(api_section, Mapping):
+        return False
+
+    provider = str(api_section.get("primary_provider", "")).strip().lower()
+    if provider != "openai":
+        return False
+
+    provider_config: Mapping[str, Any] | None = None
+    providers_section = api_section.get("providers")
+    if isinstance(providers_section, Mapping):
+        candidate = providers_section.get("openai")
+        if isinstance(candidate, Mapping):
+            provider_config = candidate
+
+    if provider_config is None:
+        candidate = api_section.get("openai")
+        if isinstance(candidate, Mapping):
+            provider_config = candidate
+
+    model_name = ""
+    if provider_config is not None:
+        raw_model = provider_config.get("model") or provider_config.get("model_name")
+        if isinstance(raw_model, str):
+            model_name = raw_model.strip().lower()
+
+    if not model_name:
+        return False
+
+    if len(model_name) > 1 and model_name[0] == "o" and model_name[1].isdigit():
+        return True
+
+    return model_name in {"o1", "o1-mini", "o1-preview", "o3", "o3-mini"}
+
+
+def _normalise_decomposition_topics(result: Any) -> tuple[List[str], Optional[Sequence[str]], Optional[str]]:
+    """Normalise decomposition payloads into a list of topic strings.
+
+    Args:
+        result: Raw object returned by the decomposition provider call.
+
+    Returns:
+        Tuple containing three values:
+            ``topics``: List of topic strings (may be empty when recursion should
+            stop).
+            ``observed_keys``: Sequence of keys seen when ``result`` is a mapping
+            that does not expose expected topic fields. ``None`` when not
+            applicable.
+            ``structure``: String describing the unexpected structure (for
+            example ``"list"``) when parsing fails. ``None`` when topics are
+            returned successfully.
+    """
+
+    if isinstance(result, list):
+        if all(isinstance(item, str) for item in result):
+            return list(result), None, None
+        return [], None, "list"
+
+    if isinstance(result, dict):
+        for key in _DECOMPOSITION_TOPIC_KEYS:
+            value = result.get(key)
+            if isinstance(value, list) and all(isinstance(item, str) for item in value):
+                return list(value), None, None
+        keys = tuple(sorted(str(item) for item in result.keys()))
+        return [], keys, "mapping"
+
+    return [], None, type(result).__name__
+
 # Synchronous version
 def execute_reasoning_tree(
     initial_content: str,
@@ -26,22 +136,36 @@ def execute_reasoning_tree(
     config: Dict[str, Any],
     agent_logger: Optional[logging.Logger] = None,
     depth: int = 0,
-    assigned_points: Optional[List[Dict[str, Any]]] = None
+    assigned_points: Optional[List[Dict[str, Any]]] = None,
+    *,
+    _warning_state: Optional[Dict[str, bool]] = None,
 ) -> Optional[Dict[str, Any]]:
-    """
-    Recursively generates a critique tree synchronously.
-    
+    """Recursively generate a reasoning tree for critique generation.
+
     Args:
-        initial_content: Content to critique
-        style_directives: Directives for the critique style
-        agent_style: Style identifier for the agent
-        config: Configuration settings
-        agent_logger: Optional logger to use
-        depth: Current depth in the reasoning tree
-        assigned_points: Optional list of points assigned to this agent
+        initial_content: Content to critique.
+        style_directives: Directives for the critique style.
+        agent_style: Style identifier for the agent.
+        config: Configuration settings and provider metadata.
+        agent_logger: Optional logger to use.
+        depth: Current depth in the reasoning tree.
+        assigned_points: Optional list of points assigned to this agent.
+        _warning_state: Internal mutable flag used to ensure decomposition
+            warnings emit at most once per run.
+
+    Returns:
+        Structured node describing the critique branch or ``None`` when the
+        branch terminates early.
+
+    Raises:
+        None. Provider exceptions are caught, logged, and result in branch
+        termination.
     """
+
     current_logger = agent_logger or module_logger
     current_logger.info(f"Depth {depth}: Starting analysis...")
+
+    warning_state = _warning_state if _warning_state is not None else {"emitted": False}
 
     tree_config = config.get('reasoning_tree', {})
     max_depth = tree_config.get('max_depth', DEFAULT_MAX_DEPTH)
@@ -138,8 +262,8 @@ Content Segment:
 {content}
 ```
 
-Return ONLY a JSON list of strings, where each string is a concise description of a sub-topic to analyze further. If no further decomposition is necessary or possible, return an empty list []. Example:
-["The definition of 'synergy' in paragraph 2", "The causality argument in section 3.1", "The empirical evidence cited for claim X"]
+Return a JSON object with a "topics" field containing an array of concise strings that describe each sub-topic to explore next. If "topics" is unavailable for your model, you may instead use "items" or "subtopics" with the same array-of-strings structure. When no additional decomposition is required, return an empty array for the selected field. Example:
+{{"topics": ["The definition of 'synergy' in paragraph 2", "The causality argument in section 3.1", "The empirical evidence cited for claim X"]}}
 """
     decomposition_context = {
         "claim": claim,
@@ -147,18 +271,51 @@ Return ONLY a JSON list of strings, where each string is a concise description o
         "content": initial_content
     }
     try:
+        structured_schema: Optional[Dict[str, Any]] = None
+        if _should_request_topic_array_schema(config):
+            structured_schema = {
+                "name": "decomposition_topics",
+                "schema": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "List of sub-topic strings describing where to recurse in the "
+                        "next critique depth."
+                    ),
+                },
+            }
         decomposition_result, model_used_for_decomposition = call_with_retry(
             prompt_template=decomposition_prompt_template,
             context=decomposition_context,
             config=config,
-            is_structured=True
+            is_structured=True,
+            structured_output_schema=structured_schema,
         )
-        if isinstance(decomposition_result, list) and all(isinstance(item, str) for item in decomposition_result):
-            sub_topics_for_recursion = decomposition_result
-            current_logger.info(f"Depth {depth}: [Model: {model_used_for_decomposition}] Identified {len(sub_topics_for_recursion)} sub-topics for recursion.")
+        provider_name = (
+            config.get("api", {}).get("primary_provider")
+            if isinstance(config.get("api"), dict)
+            else None
+        ) or "unknown"
+        topics, observed_keys, structure_type = _normalise_decomposition_topics(decomposition_result)
+        if topics:
+            sub_topics_for_recursion = topics
+            current_logger.info(
+                f"Depth {depth}: [Model: {model_used_for_decomposition}] Identified {len(sub_topics_for_recursion)} sub-topics for recursion."
+            )
         else:
-            current_logger.warning(f"Depth {depth}: Unexpected decomposition structure received from {model_used_for_decomposition}: {decomposition_result}")
-            pass
+            if not warning_state["emitted"]:
+                keys_fragment = (
+                    ",".join(observed_keys) if observed_keys is not None else f"<{structure_type}>"
+                )
+                current_logger.warning(
+                    "Depth %d: Unexpected decomposition structure provider=%s model=%s keys=%s expected_keys=%s",
+                    depth,
+                    provider_name,
+                    model_used_for_decomposition,
+                    keys_fragment,
+                    "|".join(_DECOMPOSITION_TOPIC_KEYS),
+                )
+                warning_state["emitted"] = True
 
     except (ApiCallError, ApiResponseError, JsonParsingError, JsonProcessingError) as e:
         current_logger.error(f"Depth {depth}: Failed to identify decomposition points: {e}")
@@ -193,7 +350,8 @@ Return ONLY a JSON list of strings, where each string is a concise description o
                 config=config,
                 agent_logger=current_logger,
                 depth=depth + 1,
-                assigned_points=sub_assigned_points
+                assigned_points=sub_assigned_points,
+                _warning_state=warning_state
             )
             if child_node:
                 sub_critiques.append(child_node)

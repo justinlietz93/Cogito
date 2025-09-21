@@ -29,6 +29,7 @@ from ...application.critique.requests import (
     LiteralTextInputRequest,
 )
 from ...application.critique.services import CritiqueRunner
+from ...application.preflight.orchestrator import PreflightOptions
 from ...application.user_settings.services import (
     SettingsPersistenceError,
     UserSettingsService,
@@ -44,6 +45,12 @@ from ...pipeline_input import (
 from ...scientific_review_formatter import format_scientific_peer_review
 from .directory_defaults import DirectoryInputDefaults
 from .interactive import InteractiveCli
+from .preflight import (
+    PreflightCliDefaults,
+    PreflightCliOverrides,
+    build_preflight_options,
+    update_preflight_metadata,
+)
 from .utils import derive_base_name, extract_latex_args
 
 InputArgument = Union[
@@ -68,6 +75,7 @@ class CliApp:
         critique_runner: CritiqueRunner,
         *,
         directory_defaults: DirectoryInputDefaults | None = None,
+        preflight_defaults: PreflightCliDefaults | None = None,
         input_func: Callable[[str], str] = input,
         output_func: Callable[[str], None] = print,
     ) -> None:
@@ -77,6 +85,7 @@ class CliApp:
         self._output = output_func
         self._logger = logging.getLogger(__name__)
         self._directory_defaults = directory_defaults or DirectoryInputDefaults()
+        self._preflight_defaults = preflight_defaults
         self._interactive = InteractiveCli(
             settings_service=self._settings_service,
             execute_run=self._execute_run,
@@ -120,6 +129,7 @@ class CliApp:
             latex_args=latex_args,
             remember_output=args.remember_output,
             fallback_message=fallback_message,
+            cli_args=args,
         )
 
     def _run_interactive(self) -> None:
@@ -326,8 +336,35 @@ class CliApp:
         latex_args: Optional[argparse.Namespace],
         remember_output: bool,
         fallback_message: Optional[str] = None,
+        cli_args: argparse.Namespace | None = None,
     ) -> None:
-        """Execute a critique run and persist artefacts to disk."""
+        """Execute a critique run and persist artefacts to disk.
+
+        Args:
+            input_data: Source descriptor resolved from CLI arguments.
+            output_dir: Target directory for run artefacts.
+            peer_review: Optional override for the peer review flag.
+            scientific_mode: Optional override for scientific mode.
+            latex_args: Parsed LaTeX configuration namespace.
+            remember_output: Whether to persist ``output_dir`` as default.
+            fallback_message: Optional message displayed before execution when
+                the CLI had to fall back to a default input description.
+            cli_args: Full CLI namespace used to derive preflight overrides.
+
+        Returns:
+            None.
+
+        Raises:
+            None. All errors are handled and surfaced via user-facing messages.
+
+        Side Effects:
+            Writes critique, peer review, and optional preflight artefacts to
+            disk and updates persisted settings when requested.
+
+        Timeout:
+            Not enforced at this layer; blocking operations rely on downstream
+            services to honour configured timeouts.
+        """
 
         output_path = Path(output_dir)
 
@@ -340,11 +377,15 @@ class CliApp:
         if fallback_message:
             self._output(fallback_message)
 
+        overrides = PreflightCliOverrides.from_namespace(cli_args)
+        preflight_options = build_preflight_options(self._preflight_defaults, overrides)
+
         try:
             result = self._critique_runner.run(
                 descriptor,
                 peer_review=peer_review,
                 scientific_mode=scientific_mode,
+                preflight_options=preflight_options,
             )
         except PipelineInputError as exc:
             self._logger.exception('Repository failed to aggregate input')
@@ -422,6 +463,15 @@ class CliApp:
                 self._settings_service.set_default_output_dir(str(output_path))
             except SettingsPersistenceError as exc:
                 self._output(f"Warning: Failed to remember output directory ({exc}).")
+
+        defaults = self._preflight_defaults or PreflightCliDefaults()
+        update_preflight_metadata(
+            result,
+            output_path,
+            defaults,
+            logger=self._logger,
+            notify=self._output,
+        )
 
     def _write_file(self, path: Path, content: str, description: str) -> bool:
         """Persist text content to disk, logging failures."""
