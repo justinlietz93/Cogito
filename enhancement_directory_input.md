@@ -37,9 +37,9 @@ Instruction to Coding Agent: Use this checklist to create concrete tasks and imp
 
 ## 4) Application Wiring
 
-- [ ] Add services:
-  - [ ] `ExtractionService.run(PipelineInput) -> ExtractionResult`.
-  - [ ] `QueryBuildingService.run(ExtractionResult, PipelineInput?) -> QueryPlan`.
+- [x] Add services:
+  - [x] `ExtractionService.run(PipelineInput) -> ExtractionResult`.
+  - [x] `QueryBuildingService.run(ExtractionResult, PipelineInput?) -> QueryPlan`.
 - [ ] Update orchestrator(s) (optional toggle):
   - [ ] New preflight stage: run extraction → queries before critique, or write artifacts for later stages.
   - [ ] Record outputs to artifacts directory (JSON files) and attach paths to run metadata.
