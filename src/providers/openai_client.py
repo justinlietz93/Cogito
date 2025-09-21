@@ -1,6 +1,20 @@
-"""
-Client interface for OpenAI API.
-Provides functions to call OpenAI models with retry logic and high-level interface.
+"""OpenAI provider client utilities.
+
+Purpose:
+    Provide resilient wrappers around the OpenAI HTTP API so that the
+    application can issue prompts, capture structured responses, and surface
+    provider metadata without leaking SDK details into higher layers.
+External Dependencies:
+    Uses the official ``openai`` Python SDK to communicate with OpenAI's
+    hosted API over HTTPS.
+Fallback Semantics:
+    Retries transient failures via the ``with_retry`` decorator, performs
+    structured error handling, and degrades gracefully by returning raw
+    strings when JSON payload parsing fails.
+Timeout Strategy:
+    Relies on the OpenAI SDK's default request timeouts while delegating
+    retry timing to the exponential backoff implemented in the retry
+    decorator.
 """
 
 import logging
@@ -17,6 +31,80 @@ from .decorators import with_retry, with_error_handling, cache_result
 
 logger = logging.getLogger(__name__)
 
+RESPONSE_API_MODEL_ALIASES = {"o1", "o1-mini", "o1-preview", "o3", "o3-mini"}
+REASONING_COMPLETION_PARAM_KEYWORDS = ("reasoning",)
+REASONING_COMPLETION_PARAM_PREFIXES = ("gpt-4.1", "gpt-5")
+
+
+def _model_uses_responses_api(normalised_model: str) -> bool:
+    """Determine whether a model must be called via ``responses.create``.
+
+    Args:
+        normalised_model: Lowercase model name stripped of any provider
+            namespace prefix.
+
+    Returns:
+        ``True`` when the Responses API should be used for the supplied model,
+        ``False`` otherwise.
+    """
+
+    if normalised_model in RESPONSE_API_MODEL_ALIASES:
+        return True
+
+    base_name = normalised_model.split("-")[0]
+    return bool(base_name.startswith("o") and len(base_name) > 1 and base_name[1].isdigit())
+
+
+def _is_reasoning_chat_model(normalised_model: str) -> bool:
+    """Determine whether the supplied chat model follows reasoning semantics.
+
+    Args:
+        normalised_model: Lowercase identifier for the selected OpenAI model.
+
+    Returns:
+        ``True`` when the chat completion model expects reasoning parameters
+        such as ``max_completion_tokens`` and enforces default sampling
+        behaviour, otherwise ``False``.
+
+    Raises:
+        None.
+
+    Side Effects:
+        None.
+    """
+
+    for prefix in REASONING_COMPLETION_PARAM_PREFIXES:
+        if normalised_model.startswith(prefix):
+            return True
+
+    for keyword in REASONING_COMPLETION_PARAM_KEYWORDS:
+        if keyword in normalised_model:
+            return True
+    return False
+
+
+def _chat_completion_token_parameter(normalised_model: str) -> str:
+    """Return the appropriate token limit parameter for chat completions.
+
+    Args:
+        normalised_model: Lowercase identifier for the selected OpenAI model.
+
+    Returns:
+        Name of the parameter that constrains completion tokens. Newer
+        reasoning-capable chat models require ``max_completion_tokens`` whereas
+        legacy chat models still rely on ``max_tokens``.
+
+    Raises:
+        None.
+
+    Side Effects:
+        None.
+    """
+
+    if _is_reasoning_chat_model(normalised_model):
+        return "max_completion_tokens"
+    return "max_tokens"
+
 @with_error_handling
 @with_retry(max_attempts=3, delay_base=2.0)
 def call_openai_with_retry(
@@ -26,20 +114,38 @@ def call_openai_with_retry(
     is_structured: bool = False,
     **kwargs
 ) -> Tuple[Union[str, Dict[str, Any]], str]:
-    """
-    Calls OpenAI API with the given prompt template and context.
-    Implements retry logic for transient errors.
-    
+    """Execute an OpenAI request with structured retries and parsing rules.
+
     Args:
-        prompt_template: The base prompt template
-        context: Dictionary of variables to be formatted into the template
-        config: Configuration dictionary containing API settings
-        is_structured: Whether to expect and parse a JSON response
-        system_message: Optional system message to override the default
-        max_tokens: Optional maximum token limit for the response
-        
+        prompt_template: Template string that will be formatted with context
+            variables to construct the user prompt.
+        context: Mapping of placeholder names to runtime values injected into
+            the prompt template.
+        config: Configuration dictionary containing API credentials and model
+            defaults sourced from application settings.
+        is_structured: Indicates whether the caller expects JSON output that
+            should be parsed into a Python object.
+        **kwargs: Optional overrides such as ``system_message`` or
+            ``max_tokens``/``max_completion_tokens`` supplied by upstream
+            services.
+
     Returns:
-        Tuple of (response content, model used)
+        Tuple containing the model response (text or parsed JSON) and the name
+        of the model that generated it.
+
+    Raises:
+        ModelCallError: If configuration is incomplete or the response payload
+            cannot be processed into the requested format.
+        MaxRetriesExceededError: Propagated when repeated transient failures
+            exhaust the retry budget defined by ``with_retry``.
+
+    Side Effects:
+        Issues HTTPS requests via the OpenAI SDK and logs debug information
+        about payload construction and parsing branches.
+
+    Timeout Strategy:
+        Relies on the OpenAI SDK's default timeout management while applying
+        exponential backoff between retry attempts through ``with_retry``.
     """
     # Extract configuration - check both direct and nested paths
     api_config = config.get('api', {})
@@ -89,7 +195,8 @@ def call_openai_with_retry(
     # responses.create API endpoint.
     lower_model = str(default_model).lower()
     normalised_model = lower_model.split("/")[-1]
-    is_response_api_model = normalised_model in {"o1", "o1-mini", "o3", "o3-mini"}
+    is_response_api_model = _model_uses_responses_api(normalised_model)
+    reasoning_chat_model = _is_reasoning_chat_model(normalised_model)
     
     if is_response_api_model:
         # o1 models use the responses.create API with a completely different structure
@@ -132,9 +239,25 @@ def call_openai_with_retry(
         }
         
         # Add parameters for non-O1 models
-        model_params["temperature"] = openai_config.get('temperature', 0.2)
+        temperature_override = openai_config.get('temperature', 0.2)
+        if reasoning_chat_model:
+            if temperature_override not in (None, 1, 1.0):
+                logger.info(
+                    "Skipping temperature override %s for reasoning chat model %s because only the default value is supported.",
+                    temperature_override,
+                    default_model,
+                )
+        elif temperature_override is not None:
+            model_params["temperature"] = temperature_override
         if max_tokens:
-            model_params["max_tokens"] = max_tokens
+            token_param = _chat_completion_token_parameter(normalised_model)
+            model_params[token_param] = max_tokens
+            logger.debug(
+                "Using %s=%s for chat completion model %s",
+                token_param,
+                max_tokens,
+                default_model,
+            )
         
         if is_structured:
             model_params["response_format"] = {"type": "json_object"}
@@ -261,18 +384,31 @@ def run_openai_client(
     max_tokens: Optional[int] = None,
     temperature: Optional[float] = None
 ) -> str:
-    """
-    High-level function to run the OpenAI client.
-    This is the main function to call from the AI client interface.
-    
+    """Send a conversational request to the configured OpenAI chat model.
+
     Args:
-        messages: List of message objects
-        model_name: OpenAI model name (optional, will use config if not provided)
-        max_tokens: Maximum tokens (optional, will use config if not provided)
-        temperature: Temperature for generation (optional, will use config if not provided)
-        
+        messages: Ordered list of chat message dictionaries in OpenAI format.
+        model_name: Optional explicit model identifier overriding configuration
+            and environment defaults.
+        max_tokens: Optional maximum token budget for the completion; falls
+            back to configuration when omitted.
+        temperature: Optional sampling temperature override; configuration
+            value is used when ``None``.
+
     Returns:
-        Generated response
+        Assistant response text returned by the selected OpenAI model.
+
+    Raises:
+        ModelCallError: Bubbled up from ``call_openai_with_retry`` when the
+            provider call cannot be completed successfully.
+
+    Side Effects:
+        Emits informational logs regarding the selected model and performs an
+        HTTPS request to the OpenAI API.
+
+    Timeout Strategy:
+        Delegates timeout management to the underlying OpenAI SDK alongside the
+        retry policy defined within ``call_openai_with_retry``.
     """
     try:
         # Get config
