@@ -20,12 +20,17 @@ Timeout Strategy:
 
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass, field
 from typing import Dict, Mapping, Optional
 
 from ...domain.preflight import ExtractionResult, QueryPlan
 from ...pipeline_input import PipelineInput
 from .services import ExtractionService, QueryBuildingService
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True, frozen=True)
@@ -124,20 +129,47 @@ class PreflightOrchestrator:
         metadata_copy = dict(options.metadata)
 
         if options.enable_extraction:
+            extraction_started = time.perf_counter()
             extraction_result = self.extraction_service.run(
                 pipeline_input,
                 max_points=options.max_points,
                 metadata=metadata_copy or None,
             )
+            extraction_duration_ms = (time.perf_counter() - extraction_started) * 1000.0
+            _LOGGER.info(
+                (
+                    "event=preflight_extraction_summary points_count=%d "
+                    "truncated=%s fallback_used=%s validation_error_count=%d time_ms=%.2f"
+                ),
+                len(extraction_result.points),
+                str(extraction_result.truncated).lower(),
+                str(bool(extraction_result.validation_errors)).lower(),
+                len(extraction_result.validation_errors),
+                extraction_duration_ms,
+            )
             if options.extraction_artifact_name:
                 artifact_paths["extraction"] = options.extraction_artifact_name
 
         if options.enable_query_building:
+            query_started = time.perf_counter()
             query_plan = self.query_service.run(
                 extraction_result,
                 pipeline_input,
                 max_queries=options.max_queries,
                 metadata=metadata_copy or None,
+            )
+            query_duration_ms = (time.perf_counter() - query_started) * 1000.0
+            dependencies_present = any(query.depends_on_ids for query in query_plan.queries)
+            _LOGGER.info(
+                (
+                    "event=preflight_query_summary queries_count=%d "
+                    "dependencies_present=%s fallback_used=%s validation_error_count=%d time_ms=%.2f"
+                ),
+                len(query_plan.queries),
+                str(dependencies_present).lower(),
+                str(bool(query_plan.validation_errors)).lower(),
+                len(query_plan.validation_errors),
+                query_duration_ms,
             )
             if options.query_artifact_name:
                 artifact_paths["query_plan"] = options.query_artifact_name

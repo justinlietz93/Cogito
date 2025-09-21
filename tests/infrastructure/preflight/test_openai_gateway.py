@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+
+import pytest
 
 from src.domain.preflight import ExtractedPoint, ExtractionResult
 from src.infrastructure.preflight.openai_gateway import (
@@ -11,6 +14,9 @@ from src.infrastructure.preflight.openai_gateway import (
     OpenAIQueryBuilderGateway,
 )
 from src.pipeline_input import PipelineInput
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class DummyCall:
@@ -113,6 +119,7 @@ def _make_valid_query_payload() -> Dict[str, Any]:
 
 
 def test_point_extractor_success_single_attempt() -> None:
+    LOGGER.info("Validating extractor returns structured result on first attempt.")
     """Verify success when the initial extraction attempt is valid.
 
     Returns:
@@ -140,6 +147,7 @@ def test_point_extractor_success_single_attempt() -> None:
 
 
 def test_point_extractor_retries_on_validation_error() -> None:
+    LOGGER.info("Ensuring extractor performs a retry after validation issues.")
     """Ensure a retry occurs when the first response fails validation.
 
     Returns:
@@ -167,7 +175,10 @@ def test_point_extractor_retries_on_validation_error() -> None:
     assert result.validation_errors == ()
 
 
-def test_point_extractor_returns_fallback_after_retry_failure() -> None:
+def test_point_extractor_returns_fallback_after_retry_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    LOGGER.info("Checking fallback metadata surfaces when retries remain invalid.")
     """Confirm the fallback artefact is returned when retries fail.
 
     Returns:
@@ -189,15 +200,23 @@ def test_point_extractor_returns_fallback_after_retry_failure() -> None:
     gateway = OpenAIPointExtractorGateway(call_model=call, config={}, max_retries=1)
     pipeline_input = PipelineInput(content="Example content", source="unit-test")
 
+    caplog.set_level(logging.WARNING, logger="src.infrastructure.preflight.openai_gateway")
     result = gateway.extract_points(pipeline_input)
 
     assert len(call.calls) == 2
     assert result.points == ()
     assert result.raw_response == invalid_second
     assert result.validation_errors
+    fallback_logs = [
+        record.message
+        for record in caplog.records
+        if record.name == "src.infrastructure.preflight.openai_gateway"
+    ]
+    assert any("event=provider_fallback_returned" in message for message in fallback_logs)
 
 
 def test_point_extractor_honours_metadata_overrides() -> None:
+    LOGGER.info("Verifying metadata overrides propagate to provider parameters.")
     """Validate that metadata can override provider token limits.
 
     Returns:
@@ -226,6 +245,7 @@ def test_point_extractor_honours_metadata_overrides() -> None:
 
 
 def test_query_builder_successful_execution() -> None:
+    LOGGER.info("Validating query builder parses successful payloads without retries.")
     """Verify successful query plan parsing without retries.
 
     Returns:
@@ -262,7 +282,8 @@ def test_query_builder_successful_execution() -> None:
     assert plan.validation_errors == ()
 
 
-def test_query_builder_retries_before_fallback() -> None:
+def test_query_builder_retries_before_fallback(caplog: pytest.LogCaptureFixture) -> None:
+    LOGGER.info("Ensuring query builder logs fallback usage when validation continues failing.")
     """Ensure query builder retries and returns fallback when still invalid.
 
     Returns:
@@ -282,9 +303,43 @@ def test_query_builder_retries_before_fallback() -> None:
     gateway = OpenAIQueryBuilderGateway(call_model=call, config={}, max_retries=1)
     extraction = ExtractionResult(points=())
 
+    caplog.set_level(logging.WARNING, logger="src.infrastructure.preflight.openai_gateway")
     plan = gateway.build_queries(extraction)
 
     assert len(call.calls) == 2
     assert plan.queries == ()
     assert plan.raw_response == "{}"
     assert plan.validation_errors
+    fallback_logs = [
+        record.message
+        for record in caplog.records
+        if record.name == "src.infrastructure.preflight.openai_gateway"
+    ]
+    assert any(
+        "event=provider_fallback_returned" in message and "operation=preflight_query_planning" in message
+        for message in fallback_logs
+    )
+
+
+def test_point_extractor_logs_timeout_error(caplog: pytest.LogCaptureFixture) -> None:
+    LOGGER.info("Verifying timeout errors emit structured provider diagnostics.")
+
+    def raising_call(**_: Any) -> Tuple[Any, str]:
+        raise TimeoutError("simulated timeout")
+
+    gateway = OpenAIPointExtractorGateway(call_model=raising_call, config={}, max_retries=0)
+    pipeline_input = PipelineInput(content="Example content", source="unit-test")
+
+    caplog.set_level(logging.ERROR, logger="src.infrastructure.preflight.openai_gateway")
+    with pytest.raises(TimeoutError):
+        gateway.extract_points(pipeline_input)
+
+    error_logs = [
+        record.message
+        for record in caplog.records
+        if record.name == "src.infrastructure.preflight.openai_gateway"
+    ]
+    failure = next(msg for msg in error_logs if "event=provider_call_failed" in msg)
+    assert "operation=preflight_extraction" in failure
+    assert "failure_class=TimeoutError" in failure
+    assert "fallback_used=false" in failure

@@ -188,3 +188,60 @@ def test_run_raises_when_query_enabled_without_extraction() -> None:
 
     with pytest.raises(ValueError):
         orchestrator.run(pipeline_input, PreflightOptions(enable_query_building=True))
+
+
+def test_run_logs_extraction_summary(caplog: pytest.LogCaptureFixture) -> None:
+    LOGGER.info("Confirming extraction summary logs include counts and timing metadata.")
+    extraction_result = _build_extraction_result()
+    extractor = ExtractionService(gateway=_StubExtractorGateway(extraction_result))
+    query_builder = QueryBuildingService(gateway=_StubQueryGateway(_build_query_plan()))
+    orchestrator = PreflightOrchestrator(extractor, query_builder)
+    pipeline_input = PipelineInput(content="body")
+
+    caplog.set_level(logging.INFO, logger="src.application.preflight.orchestrator")
+    orchestrator.run(pipeline_input, PreflightOptions(enable_extraction=True))
+
+    messages = [
+        record.message
+        for record in caplog.records
+        if record.name == "src.application.preflight.orchestrator"
+    ]
+    summary = next(msg for msg in messages if msg.startswith("event=preflight_extraction_summary"))
+    assert "points_count=1" in summary
+    assert "truncated=false" in summary
+    assert "time_ms=" in summary
+
+
+def test_run_logs_query_summary(caplog: pytest.LogCaptureFixture) -> None:
+    LOGGER.info("Validating query summary logs capture dependency information.")
+    extraction_result = _build_extraction_result()
+    dependent_query = BuiltQuery(
+        id="q1",
+        text="Follow-up?",
+        purpose="Assess",
+        priority=1,
+        depends_on_ids=("q0",),
+    )
+    query_plan = QueryPlan(queries=(dependent_query,), rationale="Plan")
+    extractor_gateway = _StubExtractorGateway(extraction_result)
+    query_gateway = _StubQueryGateway(query_plan)
+    extractor = ExtractionService(gateway=extractor_gateway)
+    query_builder = QueryBuildingService(gateway=query_gateway)
+    orchestrator = PreflightOrchestrator(extractor, query_builder)
+    pipeline_input = PipelineInput(content="body")
+
+    caplog.set_level(logging.INFO, logger="src.application.preflight.orchestrator")
+    orchestrator.run(
+        pipeline_input,
+        PreflightOptions(enable_extraction=True, enable_query_building=True),
+    )
+
+    messages = [
+        record.message
+        for record in caplog.records
+        if record.name == "src.application.preflight.orchestrator"
+    ]
+    summary = next(msg for msg in messages if msg.startswith("event=preflight_query_summary"))
+    assert "queries_count=1" in summary
+    assert "dependencies_present=true" in summary
+    assert "time_ms=" in summary

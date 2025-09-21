@@ -63,17 +63,17 @@ Instruction to Coding Agent: Use this checklist to create concrete tasks and imp
 
 ## 7) Logging, Metrics, and Observability
 
-- [ ] Structured logs (no content):
-  - [ ] Extraction summary: points_count, truncated, time_ms.
-  - [ ] Query plan summary: queries_count, dependencies_present, time_ms.
-  - [ ] Provider context on errors: provider, operation, stage, failure_class, fallback_used.
-- [ ] Emit internal metrics: `time_to_first_token_ms`, `total_duration_ms`, `emitted_count` when streaming is applicable.
+- [x] Structured logs (no content):
+  - [x] Extraction summary: points_count, truncated, time_ms.
+  - [x] Query plan summary: queries_count, dependencies_present, time_ms.
+  - [x] Provider context on errors: provider, operation, stage, failure_class, fallback_used.
+- [x] Emit internal metrics: `time_to_first_token_ms`, `total_duration_ms`, `emitted_count` when streaming is applicable.
 
 ## 8) Error Handling & Timeouts
 
-- [ ] Use shared timeout config and `operation_timeout` wrappers for blocking segments.
-- [ ] Retry policy: single retry on schema-parse failure with corrective system instruction.
-- [ ] Never fail silently; return artifacts with `validation_errors` when strict validation fails.
+- [x] Use shared timeout config and `operation_timeout` wrappers for blocking segments.
+- [x] Retry policy: single retry on schema-parse failure with corrective system instruction.
+- [x] Never fail silently; return artifacts with `validation_errors` when strict validation fails.
 
 ## 9) Security & Privacy
 

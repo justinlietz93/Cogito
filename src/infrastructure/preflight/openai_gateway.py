@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import logging
+import time
 from typing import Any, Callable, Mapping, Optional, Sequence, Tuple, TypeVar, Protocol
 
 from ...application.preflight.extraction_parser import ExtractionResponseParser
@@ -47,12 +49,21 @@ from ...providers import openai_client
 from ..timeouts import TimeoutConfig, get_timeout_config, operation_timeout
 
 
+_LOGGER = logging.getLogger(__name__)
+
+
 DEFAULT_PROVIDER_TIMEOUT_SECONDS = 60.0
 DEFAULT_MAX_OUTPUT_TOKENS = 4096
 
 
 JsonLike = Any
 ProviderCall = Callable[..., Tuple[JsonLike, str]]
+
+
+def _format_bool(value: bool) -> str:
+    """Return a lower-case string representation of ``value``."""
+
+    return "true" if value else "false"
 
 
 @dataclass(frozen=True)
@@ -409,15 +420,28 @@ class _OpenAIPreflightGatewayBase:
             kwargs["max_tokens"] = request.max_output_tokens
         if request.temperature is not None:
             kwargs["temperature"] = request.temperature
-        with operation_timeout(self._timeout_config, operation=operation_name):
-            response, _ = self._call_model(
-                prompt_template=request.user_message,
-                context={},
-                config=self._config,
-                is_structured=True,
-                system_message=request.system_message,
-                **kwargs,
+        try:
+            with operation_timeout(self._timeout_config, operation=operation_name):
+                response, _ = self._call_model(
+                    prompt_template=request.user_message,
+                    context={},
+                    config=self._config,
+                    is_structured=True,
+                    system_message=request.system_message,
+                    **kwargs,
+                )
+        except Exception as exc:
+            _LOGGER.error(
+                (
+                    "event=provider_call_failed provider=openai operation=%s stage=invoke "
+                    "failure_class=%s fallback_used=%s"
+                ),
+                operation_name,
+                exc.__class__.__name__,
+                _format_bool(False),
+                exc_info=False,
             )
+            raise
         return _normalise_json_like(response)
 
     def _execute_with_retries(
@@ -461,20 +485,72 @@ class _OpenAIPreflightGatewayBase:
                 user_message=prompt,
                 metadata=metadata,
             )
+            call_started = time.perf_counter()
             raw_text = self._invoke_model(request, operation_name=operation_name)
+            total_duration_ms = (time.perf_counter() - call_started) * 1000.0
+            _LOGGER.info(
+                (
+                    "event=provider_call_metrics provider=openai operation=%s stage=completed "
+                    "attempt=%d time_to_first_token_ms=%.2f total_duration_ms=%.2f emitted_count=1"
+                ),
+                operation_name,
+                attempt,
+                total_duration_ms,
+                total_duration_ms,
+            )
             result = parser.parse(raw_text)
             if result.model is not None:
                 fallback = result.model
             if result.is_valid:
+                _LOGGER.info(
+                    (
+                        "event=provider_validation_passed provider=openai operation=%s "
+                        "attempt=%d fallback_used=%s"
+                    ),
+                    operation_name,
+                    attempt,
+                    _format_bool(False),
+                )
                 assert result.model is not None
                 return result.model
             issues = result.validation_errors
+            issue_count = len(issues)
+            will_retry = attempt < self._max_retries
+            _LOGGER.warning(
+                (
+                    "event=provider_validation_failed provider=openai operation=%s stage=validation "
+                    "attempt=%d failure_class=SchemaValidationError fallback_used=%s "
+                    "validation_error_count=%d will_retry=%s"
+                ),
+                operation_name,
+                attempt,
+                _format_bool(False),
+                issue_count,
+                _format_bool(will_retry),
+            )
             if attempt >= self._max_retries:
                 break
             retry_message = parser.build_retry_message(issues)
             prompt = _compose_retry_prompt(user_message, retry_message)
         if fallback is None:
+            _LOGGER.error(
+                (
+                    "event=provider_fallback_missing provider=openai operation=%s stage=fallback "
+                    "failure_class=ParserFallbackMissing fallback_used=%s"
+                ),
+                operation_name,
+                _format_bool(False),
+            )
             raise RuntimeError("Parser did not return a fallback model after retries.")
+        _LOGGER.warning(
+            (
+                "event=provider_fallback_returned provider=openai operation=%s stage=fallback "
+                "failure_class=SchemaValidationError fallback_used=%s validation_error_count=%d"
+            ),
+            operation_name,
+            _format_bool(True),
+            len(issues),
+        )
         return fallback
 
 
