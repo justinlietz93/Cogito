@@ -232,14 +232,14 @@ def test_directory_repository_raises_on_unreadable_file(
     request = DirectoryInputRequest(root=root)
     repository = DirectoryContentRepository(request)
 
-    original_read_bytes = Path.read_bytes
+    original_open = Path.open
 
-    def patched_read_bytes(self: Path) -> bytes:
+    def patched_open(self: Path, *args, **kwargs):  # type: ignore[override]
         if self == unreadable:
             raise PermissionError('denied')
-        return original_read_bytes(self)
+        return original_open(self, *args, **kwargs)
 
-    monkeypatch.setattr(Path, 'read_bytes', patched_read_bytes)
+    monkeypatch.setattr(Path, 'open', patched_open)
 
     with pytest.raises(UnreadableFileError) as exc_info:
         repository.load_input()

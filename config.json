@@ -43,6 +43,17 @@
       "max_chars": 1000000,
       "section_separator": "\n\n---\n\n",
       "label_sections": true
+    },
+    "directory_input_overrides": {
+      "syncretic_catalyst": {
+        "order": [
+          "PROJECT_OVERVIEW.md",
+          "RESEARCH_CONTEXT.md",
+          "NEXT_STEPS.md"
+        ],
+        "label_sections": false,
+        "section_separator": "\n\n---\n\n"
+      }
     }
   }
 }

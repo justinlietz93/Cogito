@@ -159,6 +159,7 @@ def test_directory_request_uses_configuration_defaults(tmp_path: Path) -> None:
         section_separator="\n==\n",
         label_sections=False,
         enabled=True,
+        order=("introduction.md", "summary.md"),
     )
     app, _messages, _service, _runner, _prompts = make_app(directory_defaults=defaults)
 
@@ -187,6 +188,7 @@ def test_directory_request_uses_configuration_defaults(tmp_path: Path) -> None:
     assert descriptor.max_chars == defaults.max_chars
     assert descriptor.section_separator == defaults.section_separator
     assert descriptor.label_sections is defaults.label_sections
+    assert descriptor.order == defaults.order
 
 
 
@@ -407,3 +409,29 @@ def test_execute_run_handles_settings_persistence_error(tmp_path: Path) -> None:
     )
 
     assert any("Failed to remember output directory" in msg for msg in messages)
+
+def test_directory_request_uses_default_order_file(tmp_path: Path) -> None:
+    """Ensure CLI directory requests fall back to configured order files."""
+
+    defaults = DirectoryInputDefaults(order=(), order_file="order.txt")
+    app, _messages, _service, _runner, _prompts = make_app(directory_defaults=defaults)
+
+    args = SimpleNamespace(
+        input_file=None,
+        input_dir=str(tmp_path),
+        include=None,
+        exclude=None,
+        order=None,
+        order_from=None,
+        recursive=None,
+        label_sections=None,
+        max_files=None,
+        max_chars=None,
+        section_separator=None,
+    )
+
+    descriptor, warning = app._build_cli_input(args)
+
+    assert warning is None
+    assert descriptor.order is None
+    assert descriptor.order_file == Path(defaults.order_file).expanduser()

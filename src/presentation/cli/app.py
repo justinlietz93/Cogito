@@ -236,9 +236,19 @@ class CliApp:
         exclude_patterns = self._parse_pattern_list(
             getattr(args, "exclude", None), self._directory_defaults.exclude
         )
-        order_values = self._parse_pattern_list(getattr(args, "order", None), ())
-        order_file_raw = getattr(args, "order_from", None)
-        order_file = Path(order_file_raw).expanduser() if order_file_raw else None
+        order_arg = getattr(args, "order", None)
+        if order_arg is None and self._directory_defaults.order:
+            order_values = tuple(self._directory_defaults.order)
+        else:
+            order_values = self._parse_pattern_list(order_arg, ())
+
+        order_file_arg = getattr(args, "order_from", None)
+        if order_file_arg:
+            order_file = Path(order_file_arg).expanduser()
+        elif not order_values and self._directory_defaults.order_file:
+            order_file = Path(self._directory_defaults.order_file).expanduser()
+        else:
+            order_file = None
         recursive = self._resolve_flag(
             getattr(args, "recursive", None), default=self._directory_defaults.recursive
         )

@@ -213,13 +213,13 @@ Instruction to Agent: Populate the following categories with concrete, actionabl
     - [x] Review imports to confirm no presentation/infrastructure modules leak into domain/application layers post-refactor.
     - [x] Add unit tests or static checks enforcing absence of forbidden dependencies if practical.
 
-- [ ] Configuration & Defaults
+- [x] Configuration & Defaults
   - [x] Add `critique.directory_input` defaults to `config.json`
     - [x] Extend configuration schema to include directory input defaults ensuring compatibility with existing loaders.
     - [x] Provide sane include/exclude defaults matching documentation requirements.
-  - [ ] Allow pipeline overrides
-    - [ ] Identify pipelines needing overrides and expose configuration hooks for customizing repository parameters.
-    - [ ] Document override usage within configuration docs or inline comments.
+  - [x] Allow pipeline overrides
+    - [x] Identify pipelines needing overrides and expose configuration hooks for customizing repository parameters.
+    - [x] Document override usage within configuration docs or inline comments.
 
 - [x] Error Handling & Logging
   - [x] Raise explicit exceptions for invalid dir/empty selection/unreadable file
@@ -237,16 +237,16 @@ Instruction to Agent: Populate the following categories with concrete, actionabl
     - [x] Resolve candidate paths and compare to root using `Path.resolve()` guard; raise exception when violation occurs.
     - [x] Add regression test using `..` segments to confirm traversal prevention.
 
-- [ ] Testing
+- [x] Testing
   - [x] Unit: ordering, filters, decoding errors, limits, metadata
     - [x] Create fixtures for temp directories with mixed content types for deterministic testing.
     - [x] Write application-layer tests verifying repository selection and metadata assembly.
-  - [ ] Integration: CLI run with `--input-dir` produces expected outputs
-    - [ ] Implement CLI integration test using temporary output directory verifying file naming and section labels.
-    - [ ] Capture CLI logs to assert inclusion/exclusion summaries without leaking content.
-  - [ ] E2E smoke: small dir run writes outputs to target
-    - [ ] Document manual smoke test steps; automate if time permits using pytest marker for slow tests.
-    - [ ] Record observed output paths and naming for acceptance documentation.
+  - [x] Integration: CLI run with `--input-dir` produces expected outputs
+    - [x] Implement CLI integration test using temporary output directory verifying file naming and section labels.
+    - [x] Capture CLI logs to assert inclusion/exclusion summaries without leaking content.
+  - [x] E2E smoke: small dir run writes outputs to target
+    - [x] Document manual smoke test steps; automate if time permits using pytest marker for slow tests.
+    - [x] Record observed output paths and naming for acceptance documentation.
 
 - [ ] Documentation & Help
   - [x] Update README examples and CLI docs
@@ -255,22 +255,24 @@ Instruction to Agent: Populate the following categories with concrete, actionabl
   - [x] Add a short migration note
     - [x] Highlight backward compatibility assurances and new flag interplay in changelog/README.
 
-- [ ] Performance & Observability
-  - [ ] Streamed concatenation to minimize memory
-    - [ ] Evaluate existing concatenation logic; refactor to chunked approach if currently loading entire files into memory.
-    - [ ] Benchmark repository assembly on sample directories to validate memory usage improvements.
-  - [ ] Record counts/bytes/truncation in metadata
-    - [ ] Extend metadata schema and tests to confirm counts and truncation flags persist through pipeline outputs.
-    - [ ] Update logging to surface aggregated metrics post-run.
+- [x] Performance & Observability
+  - [x] Streamed concatenation to minimize memory
+    - [x] Evaluate existing concatenation logic; refactor to chunked approach if currently loading entire files into memory.
+    - [x] Benchmark repository assembly on sample directories to validate memory usage improvements.
+  - [x] Record counts/bytes/truncation in metadata
+    - [x] Extend metadata schema and tests to confirm counts and truncation flags persist through pipeline outputs.
+    - [x] Update logging to surface aggregated metrics post-run.
 
-- [ ] Acceptance Criteria Validation
-  - [ ] Verify criteria against test results and artifacts
-    - [ ] Map each acceptance criterion to corresponding automated test or manual check in a tracking note.
-    - [ ] Perform final review ensuring CLI help, documentation, and outputs align with specification before marking complete.
+- [x] Acceptance Criteria Validation
+  - [x] Verify criteria against test results and artifacts
+    - [x] Map each acceptance criterion to corresponding automated test or manual check in a tracking note.
+      - Integration coverage documented via `tests/integration/test_cli_directory_input.py` and repository logs asserted in that suite.
+      - Manual smoke expectations captured in `docs/quality/directory_input_smoke.md`.
+    - [x] Perform final review ensuring CLI help, documentation, and outputs align with specification before marking complete.
 
 - [ ] Change Management
   - [ ] Write CHANGELOG entry and link PR
-    - [ ] Draft concise changelog entry summarizing directory input enhancement and reference PR number.
+    - [x] Draft concise changelog entry summarizing directory input enhancement and reference PR number.
     - [ ] Prepare PR description referencing checklist items and attach sequence diagram artifact.
 
 Execution Notes:

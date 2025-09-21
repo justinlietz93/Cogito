@@ -125,6 +125,7 @@ class DirectoryContentRepository(ContentRepository):
                     "skipped_file_count": len(result.skipped_files),
                     "skipped_files": list(result.skipped_files),
                     "total_characters": result.total_chars,
+                    "total_bytes": metadata.total_bytes,
                     "truncated": metadata.truncated,
                     "truncation_reason": metadata.truncation_reason,
                     "truncation_events": list(result.truncation_events),
@@ -288,6 +289,7 @@ class _DirectoryAggregator:
     files: Sequence[Path]
     request: DirectoryInputRequest
     encoding: str
+    _READ_CHUNK_SIZE: int = 8192
 
     def aggregate(self) -> AggregationResult:
         """Aggregate configured files into a combined content payload."""
@@ -306,8 +308,13 @@ class _DirectoryAggregator:
 
             relative = file_path.relative_to(self.root).as_posix()
             try:
-                data = file_path.read_bytes()
-                text = data.decode(self.encoding)
+                segment_result = self._append_file(
+                    parts=parts,
+                    current_chars=total_chars,
+                    file_path=file_path,
+                    relative_path=relative,
+                    is_first=files_processed == 0,
+                )
             except UnicodeDecodeError:
                 _LOGGER.warning("Skipping non-text file: %s", file_path)
                 skipped.append(relative)
@@ -315,14 +322,6 @@ class _DirectoryAggregator:
             except OSError as exc:
                 _LOGGER.error("Failed to read file %s: %s", file_path, exc)
                 raise UnreadableFileError(f"Failed to read {relative}") from exc
-
-            segment_result = self._append_file(
-                parts=parts,
-                current_chars=total_chars,
-                content=text,
-                relative_path=relative,
-                is_first=files_processed == 0,
-            )
 
             if segment_result is None:
                 truncation_reasons.add("max_chars")
@@ -362,7 +361,7 @@ class _DirectoryAggregator:
         *,
         parts: List[str],
         current_chars: int,
-        content: str,
+        file_path: Path,
         relative_path: str,
         is_first: bool,
     ) -> Optional["_DirectoryAggregator._SegmentResult"]:
@@ -389,25 +388,41 @@ class _DirectoryAggregator:
                 return None
             truncated = truncated or truncated_label
 
-        appended_content, new_total, truncated_content = self._append_part(
-            parts,
-            current_chars,
-            content,
-        )
-        if appended_content == "":
+        digest = hashlib.sha256()
+        new_total = current_chars
+        consumed_bytes = 0
+
+        with file_path.open("r", encoding=self.encoding) as handle:
+            while True:
+                chunk = handle.read(self._READ_CHUNK_SIZE)
+                if chunk == "":
+                    break
+                appended_content, new_total, truncated_content = self._append_part(
+                    parts,
+                    new_total,
+                    chunk,
+                )
+                if appended_content == "":
+                    truncated = True
+                    break
+                encoded = appended_content.encode(self.encoding)
+                consumed_bytes += len(encoded)
+                digest.update(encoded)
+                truncated = truncated or truncated_content
+                if truncated_content:
+                    break
+
+        if consumed_bytes == 0:
             return None
 
-        truncated = truncated or truncated_content
         end_offset = new_total
-        consumed_bytes = appended_content.encode(self.encoding)
-        digest = hashlib.sha256(consumed_bytes).hexdigest()
 
         metadata = FileSegmentMetadata(
             path=relative_path,
             start_offset=start_offset,
             end_offset=end_offset,
-            byte_count=len(consumed_bytes),
-            sha256_digest=digest,
+            byte_count=consumed_bytes,
+            sha256_digest=digest.hexdigest(),
             truncated=truncated,
         )
         return self._SegmentResult(new_total_chars=new_total, metadata=metadata, truncated=truncated)

@@ -8,7 +8,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, Mapping
+from typing import Any, Dict, Mapping, Optional
 
 from dotenv import load_dotenv
 
@@ -223,16 +223,28 @@ def load_config(path: Path) -> Dict[str, Any]:
         ) from exc
 
 
-def extract_directory_defaults(config: Mapping[str, Any]) -> DirectoryInputDefaults:
+def extract_directory_defaults(
+    config: Mapping[str, Any],
+    *,
+    section: str = "critique",
+    override_key: Optional[str] = None,
+) -> DirectoryInputDefaults:
     """Build directory input defaults from the loaded configuration mapping.
 
     Args:
         config: Parsed configuration dictionary loaded from ``config.json`` or a
             compatible mapping structure.
+        section: Top-level configuration section containing the directory input
+            settings. Defaults to ``"critique"`` which matches the existing CLI
+            configuration layout.
+        override_key: Optional identifier selecting entries within the
+            ``directory_input_overrides`` mapping. When ``None`` the function
+            falls back to an override keyed by ``section`` if present.
 
     Returns:
         Instance of :class:`DirectoryInputDefaults` populated with values from
-        ``config`` when present, otherwise falling back to baked-in defaults.
+        ``config`` when present, otherwise falling back to baked-in defaults and
+        any applicable overrides.
 
     Raises:
         None.
@@ -244,13 +256,35 @@ def extract_directory_defaults(config: Mapping[str, Any]) -> DirectoryInputDefau
         Not applicable; computation is purely in-memory.
     """
 
-    critique_section = config.get("critique", {})
-    if not isinstance(critique_section, Mapping):
+    section_mapping = config.get(section, {})
+    if not isinstance(section_mapping, Mapping):
         return DirectoryInputDefaults()
-    directory_section = critique_section.get("directory_input", {})
-    if not isinstance(directory_section, Mapping):
-        return DirectoryInputDefaults()
-    return DirectoryInputDefaults.from_mapping(directory_section)
+
+    directory_section = section_mapping.get("directory_input", {})
+    if isinstance(directory_section, Mapping):
+        defaults = DirectoryInputDefaults.from_mapping(directory_section)
+    else:
+        defaults = DirectoryInputDefaults()
+
+    overrides_container = section_mapping.get("directory_input_overrides", {})
+    if not isinstance(overrides_container, Mapping):
+        return defaults
+
+    override_mappings: list[Mapping[str, Any]] = []
+
+    default_override = overrides_container.get("default")
+    if isinstance(default_override, Mapping):
+        override_mappings.append(default_override)
+
+    candidate_key = override_key or section
+    specific_override = overrides_container.get(candidate_key)
+    if isinstance(specific_override, Mapping):
+        override_mappings.append(specific_override)
+
+    for override_mapping in override_mappings:
+        defaults = defaults.with_overrides(override_mapping)
+
+    return defaults
 
 
 def determine_config_path(args: argparse.Namespace, settings_service: UserSettingsService) -> Path:
