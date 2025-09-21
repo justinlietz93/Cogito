@@ -169,55 +169,109 @@ python run_critique.py \
 Instruction to Agent: Populate the following categories with concrete, actionable tasks required to implement directory input support across all pipelines while strictly following `ARCHITECTURE_RULES.md`. Then execute those tasks, checking items off as you complete them. Use deterministic ordering, strong error handling, full docstrings, and add tests before implementation where feasible.
 
 - [ ] Architecture & Design
-  - [ ] Define `ContentRepository` contract and DTOs
+  - [x] Define `ContentRepository` contract and DTOs
+    - [x] Inspect existing `src/application` and `src/domain` packages to determine canonical location for the repository interface and DTO definitions.
+    - [x] Draft interface methods (`load`, `list_metadata`) and DTO structures ensuring they remain framework agnostic and under 500 LOC per file.
+    - [x] Document dependency direction and invariants for repository usage in architecture notes or inline comments referencing `ARCHITECTURE_RULES.md`.
   - [ ] Sequence diagram for presentation → application → infrastructure
+    - [ ] Enumerate participating components (CLI parser, application service, repositories) and confirm dependency flow respects clean architecture.
+    - [ ] Produce Mermaid-based diagram under `docs/architecture/` illustrating request handling for single-file vs directory inputs.
+    - [ ] Circulate diagram for review (self-check) and update checklist once invariants verified.
 
 - [ ] CLI / UX
   - [ ] Add flags (`--input-dir`, `--include`, `--exclude`, `--order`, `--order-from`, `--max-files`, `--max-chars`, `--section-separator`, `--label-sections`, `--recursive`)
+    - [ ] Audit each CLI entrypoint (`run_critique.py`, others) to confirm argparse wiring locations.
+    - [ ] Implement new flags with defaults sourced from configuration while maintaining backward compatibility with positional `input_file`.
+    - [ ] Ensure mutually exclusive handling between literal text, single file, and directory inputs with descriptive validation errors.
   - [ ] Update `--help` with examples and defaults
+    - [ ] Extend argparse help strings to list default include/exclude patterns and safety caps.
+    - [ ] Add usage examples for directory workflows in CLI help output and README snippet.
 
 - [ ] Application Orchestration
   - [ ] Wire repositories in runner to produce `PipelineInput`
+    - [ ] Refactor application service to accept `ContentRepository` abstraction via dependency injection.
+    - [ ] Implement selection logic that instantiates `SingleFileContentRepository` or `DirectoryContentRepository` based on parsed args.
+    - [ ] Update pipeline orchestration to consume repository output while preserving existing single-file tests.
   - [ ] Handle directory base-name derivation and filename suffix logic
+    - [ ] Update `derive_base_name` utility to strip redundant `_critique` suffixes and respect directory stems.
+    - [ ] Add regression tests covering both file and directory naming scenarios.
 
 - [ ] Infrastructure (File I/O)
   - [ ] Implement `DirectoryContentRepository` (enumerate, filter, order, read, hash, concat)
+    - [ ] Create repository module under `src/infrastructure/io/` with full docstrings and streaming read implementation.
+    - [ ] Support explicit ordering, lexicographic fallback, and UTF-8 decode validation with skip + log behavior.
+    - [ ] Aggregate metadata including offsets, byte counts, and SHA-256 digests for each included file.
   - [ ] Guard path traversal; ignore symlinks; enforce caps
+    - [ ] Validate resolved paths remain within the declared root and reject/skip symlinks by default.
+    - [ ] Enforce `max_files` and `max_chars` thresholds with structured truncation metadata and warnings routed through logger.
 
 - [ ] Domain Models & DTOs
-  - [ ] Add directory metadata model (path, offsets, bytes, sha256)
+  - [x] Add directory metadata model (path, offsets, bytes, sha256)
+    - [x] Define immutable dataclass or pydantic-free structure representing per-file metadata with docstrings.
+    - [x] Integrate metadata into `PipelineInput` without introducing infrastructure dependencies.
   - [ ] Ensure domain remains framework-agnostic
+    - [ ] Review imports to confirm no presentation/infrastructure modules leak into domain/application layers post-refactor.
+    - [ ] Add unit tests or static checks enforcing absence of forbidden dependencies if practical.
 
 - [ ] Configuration & Defaults
   - [ ] Add `critique.directory_input` defaults to `config.json`
+    - [ ] Extend configuration schema to include directory input defaults ensuring compatibility with existing loaders.
+    - [ ] Provide sane include/exclude defaults matching documentation requirements.
   - [ ] Allow pipeline overrides
+    - [ ] Identify pipelines needing overrides and expose configuration hooks for customizing repository parameters.
+    - [ ] Document override usage within configuration docs or inline comments.
 
 - [ ] Error Handling & Logging
   - [ ] Raise explicit exceptions for invalid dir/empty selection/unreadable file
+    - [ ] Map repository errors to user-friendly CLI messages while preserving stack context for debugging.
+    - [ ] Add tests covering failure cases (missing dir, permissions, decode errors) to ensure reliability.
   - [ ] Structured logs for counts/bytes/truncation (no content logging)
+    - [ ] Introduce logging helpers that emit structured dictionaries for instrumentation without leaking content.
+    - [ ] Verify logs integrate with existing logging configuration through manual smoke test or unit assertion.
 
 - [ ] Security & Limits
   - [ ] Enforce `max_files`, `max_chars` and log truncation
+    - [ ] Implement counters within repository to stop reading when caps reached and append truncation notices to metadata.
+    - [ ] Unit test truncation behavior to confirm logs and metadata entries align with requirements.
   - [ ] Validate all paths stay under `--input-dir`
+    - [ ] Resolve candidate paths and compare to root using `Path.resolve()` guard; raise exception when violation occurs.
+    - [ ] Add regression test using `..` segments to confirm traversal prevention.
 
 - [ ] Testing
   - [ ] Unit: ordering, filters, decoding errors, limits, metadata
+    - [ ] Create fixtures for temp directories with mixed content types for deterministic testing.
+    - [ ] Write application-layer tests verifying repository selection and metadata assembly.
   - [ ] Integration: CLI run with `--input-dir` produces expected outputs
+    - [ ] Implement CLI integration test using temporary output directory verifying file naming and section labels.
+    - [ ] Capture CLI logs to assert inclusion/exclusion summaries without leaking content.
   - [ ] E2E smoke: small dir run writes outputs to target
+    - [ ] Document manual smoke test steps; automate if time permits using pytest marker for slow tests.
+    - [ ] Record observed output paths and naming for acceptance documentation.
 
 - [ ] Documentation & Help
   - [ ] Update README examples and CLI docs
+    - [ ] Add new directory usage section with sample commands and expected outputs.
+    - [ ] Ensure documentation cross-links to configuration defaults and safety guidance.
   - [ ] Add a short migration note
+    - [ ] Highlight backward compatibility assurances and new flag interplay in changelog/README.
 
 - [ ] Performance & Observability
   - [ ] Streamed concatenation to minimize memory
+    - [ ] Evaluate existing concatenation logic; refactor to chunked approach if currently loading entire files into memory.
+    - [ ] Benchmark repository assembly on sample directories to validate memory usage improvements.
   - [ ] Record counts/bytes/truncation in metadata
+    - [ ] Extend metadata schema and tests to confirm counts and truncation flags persist through pipeline outputs.
+    - [ ] Update logging to surface aggregated metrics post-run.
 
 - [ ] Acceptance Criteria Validation
   - [ ] Verify criteria against test results and artifacts
+    - [ ] Map each acceptance criterion to corresponding automated test or manual check in a tracking note.
+    - [ ] Perform final review ensuring CLI help, documentation, and outputs align with specification before marking complete.
 
 - [ ] Change Management
   - [ ] Write CHANGELOG entry and link PR
+    - [ ] Draft concise changelog entry summarizing directory input enhancement and reference PR number.
+    - [ ] Prepare PR description referencing checklist items and attach sequence diagram artifact.
 
 Execution Notes:
 
