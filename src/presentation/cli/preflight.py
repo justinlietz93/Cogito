@@ -24,11 +24,12 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Mapping, Optional
+from typing import Any, Callable, Dict, Iterable, Mapping, Optional
 
 from ...application.preflight.orchestrator import PreflightOptions, PreflightRunResult
+from ...domain.preflight import BuiltQuery, ExtractionResult, ExtractedPoint, QueryPlan
 
 
 def _coerce_optional_int(value: Any) -> Optional[int]:
@@ -342,6 +343,136 @@ def _write_json_payload(
     return True
 
 
+def _serialise_extracted_points(points: Iterable[ExtractedPoint]) -> list[Dict[str, Any]]:
+    """Convert extracted point models into schema-compliant dictionaries.
+
+    Args:
+        points: Iterable collection of :class:`ExtractedPoint` instances emitted by
+            the extraction stage.
+
+    Returns:
+        List of dictionaries ready for JSON serialisation that only includes
+        schema-supported fields.
+
+    Raises:
+        None.
+
+    Side Effects:
+        None.
+
+    Timeout:
+        Not applicable; the conversion iterates deterministically over a finite
+        collection.
+    """
+
+    serialised: list[Dict[str, Any]] = []
+    for point in points:
+        serialised.append(
+            {
+                "id": point.id,
+                "title": point.title,
+                "summary": point.summary,
+                "evidence_refs": list(point.evidence_refs),
+                "confidence": point.confidence,
+                "tags": list(point.tags),
+            }
+        )
+    return serialised
+
+
+def _serialise_queries(queries: Iterable[BuiltQuery]) -> list[Dict[str, Any]]:
+    """Convert built query models into schema-compliant dictionaries.
+
+    Args:
+        queries: Iterable of :class:`BuiltQuery` instances composing a query plan.
+
+    Returns:
+        List of dictionaries containing only the properties permitted by the
+        query plan schema.
+
+    Raises:
+        None.
+
+    Side Effects:
+        None.
+
+    Timeout:
+        Not applicable; the conversion performs synchronous iteration.
+    """
+
+    serialised: list[Dict[str, Any]] = []
+    for query in queries:
+        serialised.append(
+            {
+                "id": query.id,
+                "text": query.text,
+                "purpose": query.purpose,
+                "priority": query.priority,
+                "depends_on_ids": list(query.depends_on_ids),
+                "target_audience": query.target_audience,
+                "suggested_tooling": list(query.suggested_tooling),
+            }
+        )
+    return serialised
+
+
+def _serialise_extraction_result(result: ExtractionResult) -> Dict[str, Any]:
+    """Transform an extraction result into a JSON-serialisable mapping.
+
+    Args:
+        result: Fully populated :class:`ExtractionResult` produced by the
+            orchestrator.
+
+    Returns:
+        Dictionary compatible with ``extraction.schema.json`` where only schema
+        sanctioned fields are emitted.
+
+    Raises:
+        None.
+
+    Side Effects:
+        None.
+
+    Timeout:
+        Not applicable.
+    """
+
+    return {
+        "points": _serialise_extracted_points(result.points),
+        "source_stats": dict(result.source_stats),
+        "truncated": bool(result.truncated),
+    }
+
+
+def _serialise_query_plan(plan: QueryPlan) -> Dict[str, Any]:
+    """Serialise a query plan without emitting fallback-specific metadata.
+
+    Args:
+        plan: :class:`QueryPlan` instance describing planned queries and context.
+
+    Returns:
+        Mapping that conforms to ``query_plan.schema.json`` and omits raw
+        provider payload details that are tracked separately in the domain
+        model.
+
+    Raises:
+        None.
+
+    Side Effects:
+        None.
+
+    Timeout:
+        Not applicable; computation is purely in-memory.
+    """
+
+    return {
+        "queries": _serialise_queries(plan.queries),
+        "rationale": plan.rationale,
+        "assumptions": list(plan.assumptions),
+        "risks": list(plan.risks),
+    }
+
+
 def persist_preflight_artifacts(
     preflight: PreflightRunResult,
     output_dir: Path,
@@ -381,7 +512,8 @@ def persist_preflight_artifacts(
             preflight.artifact_paths.get("extraction"),
             defaults.points_artifact,
         )
-        if _write_json_payload(path, asdict(preflight.extraction), logger=logger, description="preflight extraction"):
+        payload = _serialise_extraction_result(preflight.extraction)
+        if _write_json_payload(path, payload, logger=logger, description="preflight extraction"):
             notify(f"Preflight points saved to {path}")
             resolved["extraction"] = str(path)
         else:
@@ -393,7 +525,8 @@ def persist_preflight_artifacts(
             preflight.artifact_paths.get("query_plan"),
             defaults.queries_artifact,
         )
-        if _write_json_payload(path, asdict(preflight.query_plan), logger=logger, description="preflight query plan"):
+        payload = _serialise_query_plan(preflight.query_plan)
+        if _write_json_payload(path, payload, logger=logger, description="preflight query plan"):
             notify(f"Preflight queries saved to {path}")
             resolved["query_plan"] = str(path)
         else:

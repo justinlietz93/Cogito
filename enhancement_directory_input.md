@@ -87,9 +87,9 @@ Instruction to Coding Agent: Use this checklist to create concrete tasks and imp
   - [x] Prompt builder emits constraints and exemplars.
   - [x] Parser validates schema and surfaces errors; retry path covered.
   - [x] Services handle caps and truncated inputs.
-- [ ] Integration tests:
-  - [ ] CLI with `--preflight-extract` produces `points.json` with valid schema.
-  - [ ] CLI with `--preflight-build-queries` produces `queries.json` with valid schema.
+- [x] Integration tests:
+  - [x] CLI with `--preflight-extract` produces `points.json` with valid schema.
+  - [x] CLI with `--preflight-build-queries` produces `queries.json` with valid schema.
 - [ ] Edge cases:
   - [ ] Empty/very small input → zero points, no errors.
   - [ ] Large input → capped points, `truncated=true` in metadata.
