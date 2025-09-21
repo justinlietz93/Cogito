@@ -168,7 +168,7 @@ python run_critique.py \
 
 Instruction to Agent: Populate the following categories with concrete, actionable tasks required to implement directory input support across all pipelines while strictly following `ARCHITECTURE_RULES.md`. Then execute those tasks, checking items off as you complete them. Use deterministic ordering, strong error handling, full docstrings, and add tests before implementation where feasible.
 
-- [ ] Architecture & Design
+- [x] Architecture & Design
   - [x] Define `ContentRepository` contract and DTOs
     - [x] Inspect existing `src/application` and `src/domain` packages to determine canonical location for the repository interface and DTO definitions.
     - [x] Draft interface methods (`load`, `list_metadata`) and DTO structures ensuring they remain framework agnostic and under 500 LOC per file.
@@ -229,7 +229,7 @@ Instruction to Agent: Populate the following categories with concrete, actionabl
     - [x] Introduce logging helpers that emit structured dictionaries for instrumentation without leaking content.
     - [x] Verify logs integrate with existing logging configuration through manual smoke test or unit assertion.
 
-- [ ] Security & Limits
+- [x] Security & Limits
   - [x] Enforce `max_files`, `max_chars` and log truncation
     - [x] Implement counters within repository to stop reading when caps reached and append truncation notices to metadata.
     - [x] Unit test truncation behavior to confirm logs and metadata entries align with requirements.
@@ -248,7 +248,7 @@ Instruction to Agent: Populate the following categories with concrete, actionabl
     - [x] Document manual smoke test steps; automate if time permits using pytest marker for slow tests.
     - [x] Record observed output paths and naming for acceptance documentation.
 
-- [ ] Documentation & Help
+- [x] Documentation & Help
   - [x] Update README examples and CLI docs
     - [x] Add new directory usage section with sample commands and expected outputs.
     - [x] Ensure documentation cross-links to configuration defaults and safety guidance.
@@ -270,10 +270,22 @@ Instruction to Agent: Populate the following categories with concrete, actionabl
       - Manual smoke expectations captured in `docs/quality/directory_input_smoke.md`.
     - [x] Perform final review ensuring CLI help, documentation, and outputs align with specification before marking complete.
 
-- [ ] Change Management
-  - [ ] Write CHANGELOG entry and link PR
+- [x] Change Management
+  - [x] Write CHANGELOG entry and link PR
     - [x] Draft concise changelog entry summarizing directory input enhancement and reference PR number.
-    - [ ] Prepare PR description referencing checklist items and attach sequence diagram artifact.
+    - [x] Prepare PR description referencing checklist items and attach sequence diagram artifact.
+      - Draft PR description referencing `docs/architecture/directory_input_sequence.md`:
+
+        ```markdown
+        ## Summary
+        - Address Architecture & Design tasks in enhancement_directory_input.md by wiring the directory-aware content repository through the clean-architecture layers.
+        - Close Security & Limits checklist items by enforcing traversal guards, truncation caps, and structured logging/metadata for directory ingestion.
+        - Finalize Documentation & Help tasks with README/CLI updates describing directory workflows and configuration defaults.
+        - Sequence diagram: docs/architecture/directory_input_sequence.md.
+
+        ## Testing
+        - pytest
+        ```
 
 Execution Notes:
 
