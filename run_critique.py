@@ -13,14 +13,18 @@ from typing import Any, Dict, Mapping, Optional
 from dotenv import load_dotenv
 
 from src.application.critique.configuration import ModuleConfigBuilder
+from src.application.critique.exceptions import ConfigurationError, MissingApiKeyError
 from src.application.critique.services import CritiqueRunner
+from src.application.preflight import ExtractionService, PreflightOrchestrator, QueryBuildingService
 from src.application.user_settings.services import SettingsPersistenceError, UserSettingsService
 from src.domain.user_settings.models import UserSettings
 from src.infrastructure.critique.gateway import ModuleCritiqueGateway
+from src.infrastructure.preflight import OpenAIPointExtractorGateway, OpenAIQueryBuilderGateway
 from src.infrastructure.io.file_repository import FileSystemContentRepositoryFactory
 from src.infrastructure.user_settings.file_repository import JsonFileSettingsRepository
 from src.latex.cli import add_latex_arguments
 from src.presentation.cli.app import CliApp, DirectoryInputDefaults
+from src.presentation.cli.preflight import PreflightCliDefaults, load_preflight_defaults
 
 
 class ConfigLoadError(Exception):
@@ -48,7 +52,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
             "Directory usage example:\n"
             "  python run_critique.py --input-dir ./notes --include \"**/*.md\" \\"
             "\n    --exclude \"**/drafts/**\" --max-files 50 --max-chars 750000\n"
-            "Configuration defaults live under critique.directory_input in config.json."
+            "Configuration defaults live under critique.directory_input in config.json.\n\n"
+            "Preflight example:\n"
+            "  python run_critique.py ./report.md --preflight-extract --preflight-build-queries\\\n"
+            "\n    --points-out artifacts/points.json --queries-out artifacts/queries.json"
         ),
         formatter_class=argparse.RawTextHelpFormatter,
     )
@@ -173,6 +180,71 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Directory where critique reports should be stored.",
     )
     parser.add_argument(
+        "--preflight-extract",
+        dest="preflight_extract",
+        action="store_true",
+        help=(
+            "Enable the preflight point extraction stage. Defaults follow "
+            "preflight.extract.enabled in config.json."
+        ),
+    )
+    parser.add_argument(
+        "--no-preflight-extract",
+        dest="preflight_extract",
+        action="store_false",
+        help="Disable preflight point extraction for this run.",
+    )
+    parser.add_argument(
+        "--preflight-build-queries",
+        dest="preflight_build_queries",
+        action="store_true",
+        help=(
+            "Enable the preflight query-planning stage. Defaults follow "
+            "preflight.queries.enabled in config.json."
+        ),
+    )
+    parser.add_argument(
+        "--no-preflight-build-queries",
+        dest="preflight_build_queries",
+        action="store_false",
+        help="Disable preflight query planning for this run.",
+    )
+    parser.add_argument(
+        "--points-out",
+        dest="points_out",
+        help=(
+            "Path for writing extracted points JSON. Relative paths are "
+            "resolved inside the output directory. Defaults follow "
+            "preflight.extract.artifact_path."
+        ),
+    )
+    parser.add_argument(
+        "--queries-out",
+        dest="queries_out",
+        help=(
+            "Path for writing query plan JSON. Relative paths resolve inside "
+            "the output directory. Defaults follow preflight.queries.artifact_path."
+        ),
+    )
+    parser.add_argument(
+        "--max-points",
+        dest="max_points",
+        type=int,
+        help=(
+            "Override the maximum number of extracted points. Defaults follow "
+            "preflight.extract.max_points."
+        ),
+    )
+    parser.add_argument(
+        "--max-queries",
+        dest="max_queries",
+        type=int,
+        help=(
+            "Override the maximum number of generated queries. Defaults follow "
+            "preflight.queries.max_queries."
+        ),
+    )
+    parser.add_argument(
         "--remember-output",
         action="store_true",
         help="Persist the provided output directory as the default.",
@@ -201,6 +273,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
         interactive_mode=None,
         label_sections=None,
         recursive=None,
+        preflight_extract=None,
+        preflight_build_queries=None,
+        points_out=None,
+        queries_out=None,
+        max_points=None,
+        max_queries=None,
     )
     parser = add_latex_arguments(parser)
     return parser
@@ -287,6 +365,148 @@ def extract_directory_defaults(
     return defaults
 
 
+def _compose_preflight_gateway_config(
+    module_config: Mapping[str, Any],
+    preflight_section: Mapping[str, Any],
+    *,
+    provider: str,
+) -> Optional[Dict[str, Any]]:
+    """Merge resolved provider credentials with preflight overrides.
+
+    Args:
+        module_config: Fully resolved configuration produced by
+            :class:`ModuleConfigBuilder` containing provider API keys.
+        preflight_section: Mapping from ``config.json`` under the ``preflight``
+            key that may include provider overrides and timeout settings.
+        provider: Normalised provider name selected for the preflight stages.
+
+    Returns:
+        Mapping containing the merged configuration suitable for the
+        preflight gateways or ``None`` when no configuration could be
+        constructed.
+
+    Raises:
+        None. Unexpected structures simply result in a ``None`` return value.
+
+    Side Effects:
+        None.
+
+    Timeout:
+        Not applicable; execution is purely CPU-bound.
+    """
+
+    provider_key = provider.lower()
+    api_section = module_config.get("api", {})
+    provider_config: Dict[str, Any] = {}
+    if isinstance(api_section, Mapping):
+        providers = api_section.get("providers", {})
+        if isinstance(providers, Mapping):
+            base_provider = providers.get(provider_key)
+            if isinstance(base_provider, Mapping):
+                provider_config.update(dict(base_provider))
+        direct_entry = api_section.get(provider_key)
+        if isinstance(direct_entry, Mapping):
+            provider_config.update(dict(direct_entry))
+
+    preflight_api = preflight_section.get("api", {}) if isinstance(preflight_section, Mapping) else {}
+    if isinstance(preflight_api, Mapping):
+        override_entry = preflight_api.get(provider_key)
+        if isinstance(override_entry, Mapping):
+            provider_config.update(dict(override_entry))
+
+    if not provider_config:
+        return None
+
+    merged: Dict[str, Any] = {}
+    if isinstance(preflight_section, Mapping):
+        timeouts = preflight_section.get("timeouts")
+        if isinstance(timeouts, Mapping):
+            merged["timeouts"] = dict(timeouts)
+
+    api_overrides: Dict[str, Any] = {}
+    if isinstance(preflight_api, Mapping):
+        for name, value in preflight_api.items():
+            if name == provider_key:
+                continue
+            if isinstance(value, Mapping):
+                api_overrides[name] = dict(value)
+    api_overrides[provider_key] = provider_config
+    merged["api"] = api_overrides
+    return merged
+
+
+def _initialise_preflight_orchestrator(
+    base_config: Mapping[str, Any],
+    config_builder: ModuleConfigBuilder,
+    defaults: PreflightCliDefaults,
+) -> Optional[PreflightOrchestrator]:
+    """Construct the preflight orchestrator when configuration permits.
+
+    Args:
+        base_config: Raw mapping loaded from ``config.json``.
+        config_builder: Builder responsible for resolving provider credentials.
+        defaults: CLI defaults derived from ``base_config``.
+
+    Returns:
+        Instantiated :class:`PreflightOrchestrator` or ``None`` when
+        configuration is incomplete.
+
+    Raises:
+        None. Any configuration errors are logged and result in ``None``.
+
+    Side Effects:
+        Logs debug information describing why initialisation failed.
+
+    Timeout:
+        Not applicable.
+    """
+
+    logger = logging.getLogger(__name__)
+    preflight_section = base_config.get("preflight")
+    if not isinstance(preflight_section, Mapping):
+        return None
+
+    try:
+        module_config = config_builder.build()
+    except (MissingApiKeyError, ConfigurationError) as exc:
+        logger.debug("Preflight orchestrator unavailable: %s", exc)
+        return None
+
+    provider = defaults.provider.lower()
+    if provider != "openai":
+        logger.warning(
+            "Preflight orchestrator currently supports only the OpenAI provider; requested '%s' was skipped.",
+            defaults.provider,
+        )
+        return None
+
+    gateway_config = _compose_preflight_gateway_config(
+        module_config,
+        preflight_section,
+        provider=provider,
+    )
+    if gateway_config is None:
+        logger.debug("Skipping preflight orchestrator setup: missing provider configuration for '%s'.", provider)
+        return None
+
+    try:
+        extraction_gateway = OpenAIPointExtractorGateway(config=gateway_config)
+        query_gateway = OpenAIQueryBuilderGateway(config=gateway_config)
+    except Exception as exc:  # noqa: BLE001 - propagate failure details via logs
+        logger.error("Failed to configure preflight gateways: %s", exc)
+        return None
+
+    extraction_service = ExtractionService(
+        extraction_gateway,
+        default_max_points=defaults.max_points,
+    )
+    query_service = QueryBuildingService(
+        query_gateway,
+        default_max_queries=defaults.max_queries,
+    )
+    return PreflightOrchestrator(extraction_service, query_service)
+
+
 def determine_config_path(args: argparse.Namespace, settings_service: UserSettingsService) -> Path:
     if getattr(args, "config", None):
         return Path(args.config).expanduser()
@@ -349,18 +569,26 @@ def main() -> None:
         sys.exit(1)
 
     config_builder = ModuleConfigBuilder(base_config, settings_service, os.getenv)
+    preflight_defaults = load_preflight_defaults(base_config)
+    preflight_orchestrator = _initialise_preflight_orchestrator(
+        base_config,
+        config_builder,
+        preflight_defaults,
+    )
     repository_factory = FileSystemContentRepositoryFactory()
     critique_runner = CritiqueRunner(
         settings_service,
         config_builder,
         ModuleCritiqueGateway(),
         repository_factory,
+        preflight_orchestrator=preflight_orchestrator,
     )
     directory_defaults = extract_directory_defaults(base_config)
     cli_app = CliApp(
         settings_service,
         critique_runner,
         directory_defaults=directory_defaults,
+        preflight_defaults=preflight_defaults,
     )
 
     interactive = should_run_interactive(args)

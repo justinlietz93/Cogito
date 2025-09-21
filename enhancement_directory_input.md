@@ -46,12 +46,12 @@ Instruction to Coding Agent: Use this checklist to create concrete tasks and imp
 
 ## 5) CLI / UX
 
-- [ ] CLI flags in `run_critique.py` (and any relevant entrypoints):
-  - [ ] `--preflight-extract` to enable extraction.
-  - [ ] `--preflight-build-queries` to enable query building.
-  - [ ] `--points-out <path>` and `--queries-out <path>` to control JSON artifact locations.
-  - [ ] `--max-points <n>` and `--max-queries <n>` (caps enforced in prompts and post-filtering).
-- [ ] Help text and examples updated; defaults sourced from `config.json`.
+- [x] CLI flags in `run_critique.py` (and any relevant entrypoints):
+  - [x] `--preflight-extract` to enable extraction.
+  - [x] `--preflight-build-queries` to enable query building.
+  - [x] `--points-out <path>` and `--queries-out <path>` to control JSON artifact locations.
+  - [x] `--max-points <n>` and `--max-queries <n>` (caps enforced in prompts and post-filtering).
+- [x] Help text and examples updated; defaults sourced from `config.json`.
 
 ## 6) Configuration & Defaults
 
