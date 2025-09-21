@@ -167,10 +167,19 @@ def test_call_openai_with_retry_sets_chat_max_tokens(monkeypatch: pytest.MonkeyP
     assert captured["max_tokens"] == 321
 
 
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        "gpt-4.1-mini",
+        "gpt-5-mini",
+    ],
+    ids=["gpt-4.1-family", "gpt-5-family"],
+)
 def test_call_openai_with_retry_sets_chat_max_completion_tokens(
     monkeypatch: pytest.MonkeyPatch,
+    model_name: str,
 ) -> None:
-    """Reasoning chat models should forward the ``max_completion_tokens`` argument."""
+    """Reasoning chat models should forward ``max_completion_tokens`` for modern aliases."""
 
     captured: Dict[str, Any] = {}
 
@@ -188,7 +197,7 @@ def test_call_openai_with_retry_sets_chat_max_completion_tokens(
     openai_client.call_openai_with_retry(
         prompt_template="Prompt",
         context={},
-        config={"api": {"openai": {"model": "gpt-4.1-mini", "resolved_key": "key"}}},
+        config={"api": {"openai": {"model": model_name, "resolved_key": "key"}}},
         is_structured=False,
         max_tokens=222,
     )

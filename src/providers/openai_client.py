@@ -32,7 +32,8 @@ from .decorators import with_retry, with_error_handling, cache_result
 logger = logging.getLogger(__name__)
 
 RESPONSE_API_MODEL_ALIASES = {"o1", "o1-mini", "o1-preview", "o3", "o3-mini"}
-REASONING_COMPLETION_PARAM_KEYWORDS = ("reasoning", "gpt-4.1")
+REASONING_COMPLETION_PARAM_KEYWORDS = ("reasoning",)
+REASONING_COMPLETION_PARAM_PREFIXES = ("gpt-4.1", "gpt-5")
 
 
 def _model_uses_responses_api(normalised_model: str) -> bool:
@@ -66,6 +67,9 @@ def _chat_completion_token_parameter(normalised_model: str) -> str:
         legacy chat models still rely on ``max_tokens``.
     """
 
+    for prefix in REASONING_COMPLETION_PARAM_PREFIXES:
+        if normalised_model.startswith(prefix):
+            return "max_completion_tokens"
     for keyword in REASONING_COMPLETION_PARAM_KEYWORDS:
         if keyword in normalised_model:
             return "max_completion_tokens"
