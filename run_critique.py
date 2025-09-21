@@ -508,12 +508,54 @@ def _initialise_preflight_orchestrator(
 
 
 def determine_config_path(args: argparse.Namespace, settings_service: UserSettingsService) -> Path:
-    if getattr(args, "config", None):
-        return Path(args.config).expanduser()
+    """Resolve the JSON configuration path used for CLI execution.
+
+    Args:
+        args: Parsed CLI arguments that may include a ``--config`` override.
+        settings_service: Service providing persisted user preferences that can
+            store a configuration path from prior runs.
+
+    Returns:
+        Path pointing to the JSON configuration file. YAML paths are ignored in
+        favour of the project default to ensure compatibility with the JSON
+        loader used by the CLI.
+
+    Raises:
+        None.
+
+    Side Effects:
+        Logs when YAML paths are supplied so operators understand the fallback
+        behaviour.
+
+    Timeout:
+        Not applicable; only inexpensive path manipulations occur.
+    """
+
+    logger = logging.getLogger(__name__)
+
+    def _normalise(candidate: Path | None) -> Path | None:
+        if candidate is None:
+            return None
+        suffix = candidate.suffix.lower()
+        if suffix in {".yaml", ".yml"}:
+            logger.info(
+                "Configuration path '%s' uses YAML; defaulting to config.json for CLI preflight support.",
+                candidate,
+            )
+            return None
+        return candidate
+
+    override = getattr(args, "config", None)
+    if override:
+        override_path = _normalise(Path(override).expanduser())
+        if override_path is not None:
+            return override_path
+        return Path("config.json")
 
     stored = settings_service.get_settings().config_path
-    if stored:
-        return Path(stored)
+    stored_path = _normalise(Path(stored).expanduser() if stored else None)
+    if stored_path is not None:
+        return stored_path
 
     return Path("config.json")
 

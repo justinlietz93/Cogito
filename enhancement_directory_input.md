@@ -55,11 +55,11 @@ Instruction to Coding Agent: Use this checklist to create concrete tasks and imp
 
 ## 6) Configuration & Defaults
 
-- [ ] Extend `config.json` with:
-  - [ ] `preflight.extract.enabled`, `preflight.extract.max_points`.
-  - [ ] `preflight.queries.enabled`, `preflight.queries.max_queries`.
-  - [ ] Model + provider settings for preflight stages (model name, temperature, tokens).
-- [ ] Loader changes: keep YAML loader optional; ensure CLI path reads JSON config.
+- [x] Extend `config.json` with:
+  - [x] `preflight.extract.enabled`, `preflight.extract.max_points`.
+  - [x] `preflight.queries.enabled`, `preflight.queries.max_queries`.
+  - [x] Model + provider settings for preflight stages (model name, temperature, tokens).
+- [x] Loader changes: keep YAML loader optional; ensure CLI path reads JSON config.
 
 ## 7) Logging, Metrics, and Observability
 
