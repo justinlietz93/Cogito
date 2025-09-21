@@ -4,36 +4,36 @@ Instruction to Coding Agent: Use this checklist to create concrete tasks and imp
 
 ## 1) Architecture & Contracts
 
-- [ ] Define clean contracts in the application layer (no framework deps):
-  - [ ] `PointExtractorGateway` (port): extract concise, structured points from raw `PipelineInput`.
-  - [ ] `QueryBuilderGateway` (port): produce follow-up questions/queries from points and context.
-  - [ ] `ExtractionService` and `QueryBuildingService` orchestration services (thin, pure, testable).
-- [ ] DTOs (domain/application):
-  - [ ] `ExtractedPoint` (id, title, summary, evidence_refs, confidence [0-1], tags[]).
-  - [ ] `ExtractionResult` (points[], source_stats, truncated: bool).
-  - [ ] `BuiltQuery` (id, text, purpose, priority, depends_on_ids[], target_audience, suggested_tooling?).
-  - [ ] `QueryPlan` (queries[], rationale, assumptions, risks).
-- [ ] Ensure dependency direction: presentation → application → providers/infrastructure (inward only).
+- [x] Define clean contracts in the application layer (no framework deps):
+  - [x] `PointExtractorGateway` (port): extract concise, structured points from raw `PipelineInput`.
+  - [x] `QueryBuilderGateway` (port): produce follow-up questions/queries from points and context.
+  - [x] `ExtractionService` and `QueryBuildingService` orchestration services (thin, pure, testable).
+- [x] DTOs (domain/application):
+  - [x] `ExtractedPoint` (id, title, summary, evidence_refs, confidence [0-1], tags[]).
+  - [x] `ExtractionResult` (points[], source_stats, truncated: bool).
+  - [x] `BuiltQuery` (id, text, purpose, priority, depends_on_ids[], target_audience, suggested_tooling?).
+  - [x] `QueryPlan` (queries[], rationale, assumptions, risks).
+- [x] Ensure dependency direction: presentation → application → providers/infrastructure (inward only).
 
 ## 2) Prompting & Structured Output
 
-- [ ] Author robust LLM prompts (system + user) for:
-  - [ ] Point extraction: require strict JSON output matching a JSON Schema.
-  - [ ] Query building: produce questions/queries with purpose and dependency fields.
-- [ ] Define JSON Schemas (in `src/contexts/schemas/`):
-  - [ ] `extraction.schema.json` for `ExtractionResult`.
-  - [ ] `query_plan.schema.json` for `QueryPlan`.
-- [ ] Implement parser/validator:
-  - [ ] Strict JSON parsing with schema validation; reject if invalid and attempt 1 retry with error message reflection.
-  - [ ] Safe fallbacks: if still invalid, store raw text with `validation_errors` metadata and continue.
+- [x] Author robust LLM prompts (system + user) for:
+  - [x] Point extraction: require strict JSON output matching a JSON Schema.
+  - [x] Query building: produce questions/queries with purpose and dependency fields.
+- [x] Define JSON Schemas (in `src/contexts/schemas/`):
+  - [x] `extraction.schema.json` for `ExtractionResult`.
+  - [x] `query_plan.schema.json` for `QueryPlan`.
+- [x] Implement parser/validator:
+  - [x] Strict JSON parsing with schema validation; reject if invalid and attempt 1 retry with error message reflection.
+  - [x] Safe fallbacks: if still invalid, store raw text with `validation_errors` metadata and continue.
 
 ## 3) Provider Integrations
 
-- [ ] Implement provider adapters behind gateways (e.g., OpenAI first):
-  - [ ] Route GPT‑5/4.1/o‑series through Responses API with `max_output_tokens`.
-  - [ ] Set deterministic defaults (e.g., `temperature=0.2`) unless model requires override.
-  - [ ] Enforce timeouts via shared timeout config; no hard-coded numeric literals.
-- [ ] Add thin mappers: DTO ↔ provider payloads; keep providers isolated from application types.
+- [x] Implement provider adapters behind gateways (e.g., OpenAI first):
+  - [x] Route GPT‑5/4.1/o‑series through Responses API with `max_output_tokens`.
+  - [x] Set deterministic defaults (e.g., `temperature=0.2`) unless model requires override.
+  - [x] Enforce timeouts via shared timeout config; no hard-coded numeric literals.
+- [x] Add thin mappers: DTO ↔ provider payloads; keep providers isolated from application types.
 
 ## 4) Application Wiring
 
