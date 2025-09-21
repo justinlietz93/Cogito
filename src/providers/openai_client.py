@@ -70,7 +70,6 @@ def _chat_completion_token_parameter(normalised_model: str) -> str:
     for prefix in REASONING_COMPLETION_PARAM_PREFIXES:
         if normalised_model.startswith(prefix):
             return "max_completion_tokens"
-
     for keyword in REASONING_COMPLETION_PARAM_KEYWORDS:
         if keyword in normalised_model:
             return "max_completion_tokens"
