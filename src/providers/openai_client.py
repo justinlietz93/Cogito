@@ -55,6 +55,34 @@ def _model_uses_responses_api(normalised_model: str) -> bool:
     return bool(base_name.startswith("o") and len(base_name) > 1 and base_name[1].isdigit())
 
 
+def _is_reasoning_chat_model(normalised_model: str) -> bool:
+    """Determine whether the supplied chat model follows reasoning semantics.
+
+    Args:
+        normalised_model: Lowercase identifier for the selected OpenAI model.
+
+    Returns:
+        ``True`` when the chat completion model expects reasoning parameters
+        such as ``max_completion_tokens`` and enforces default sampling
+        behaviour, otherwise ``False``.
+
+    Raises:
+        None.
+
+    Side Effects:
+        None.
+    """
+
+    for prefix in REASONING_COMPLETION_PARAM_PREFIXES:
+        if normalised_model.startswith(prefix):
+            return True
+
+    for keyword in REASONING_COMPLETION_PARAM_KEYWORDS:
+        if keyword in normalised_model:
+            return True
+    return False
+
+
 def _chat_completion_token_parameter(normalised_model: str) -> str:
     """Return the appropriate token limit parameter for chat completions.
 
@@ -65,14 +93,16 @@ def _chat_completion_token_parameter(normalised_model: str) -> str:
         Name of the parameter that constrains completion tokens. Newer
         reasoning-capable chat models require ``max_completion_tokens`` whereas
         legacy chat models still rely on ``max_tokens``.
+
+    Raises:
+        None.
+
+    Side Effects:
+        None.
     """
 
-    for prefix in REASONING_COMPLETION_PARAM_PREFIXES:
-        if normalised_model.startswith(prefix):
-            return "max_completion_tokens"
-    for keyword in REASONING_COMPLETION_PARAM_KEYWORDS:
-        if keyword in normalised_model:
-            return "max_completion_tokens"
+    if _is_reasoning_chat_model(normalised_model):
+        return "max_completion_tokens"
     return "max_tokens"
 
 @with_error_handling
@@ -166,6 +196,7 @@ def call_openai_with_retry(
     lower_model = str(default_model).lower()
     normalised_model = lower_model.split("/")[-1]
     is_response_api_model = _model_uses_responses_api(normalised_model)
+    reasoning_chat_model = _is_reasoning_chat_model(normalised_model)
     
     if is_response_api_model:
         # o1 models use the responses.create API with a completely different structure
@@ -208,7 +239,16 @@ def call_openai_with_retry(
         }
         
         # Add parameters for non-O1 models
-        model_params["temperature"] = openai_config.get('temperature', 0.2)
+        temperature_override = openai_config.get('temperature', 0.2)
+        if reasoning_chat_model:
+            if temperature_override not in (None, 1, 1.0):
+                logger.info(
+                    "Skipping temperature override %s for reasoning chat model %s because only the default value is supported.",
+                    temperature_override,
+                    default_model,
+                )
+        elif temperature_override is not None:
+            model_params["temperature"] = temperature_override
         if max_tokens:
             token_param = _chat_completion_token_parameter(normalised_model)
             model_params[token_param] = max_tokens
