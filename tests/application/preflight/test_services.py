@@ -295,3 +295,33 @@ def test_query_service_rejects_non_positive_limits() -> None:
 
     with pytest.raises(ValueError):
         service.run(extraction, max_queries=0)
+
+def test_extraction_service_preserves_truncated_results() -> None:
+    """Confirm truncated results from the gateway propagate without mutation.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+
+    Raises:
+        AssertionError: If the service fails to return the truncated artefact as
+            provided by the gateway stub.
+
+    Side Effects:
+        None.
+
+    Timeout:
+        Not applicable; the stub executes synchronously.
+    """
+
+    pipeline_input = PipelineInput(content="example")
+    result = ExtractionResult(truncated=True)
+    stub = StubPointExtractor(result)
+    service = ExtractionService(gateway=stub)
+
+    returned = service.run(pipeline_input)
+
+    assert returned is result
+    assert returned.truncated is True

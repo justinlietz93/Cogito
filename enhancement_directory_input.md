@@ -83,10 +83,10 @@ Instruction to Coding Agent: Use this checklist to create concrete tasks and imp
 
 ## 10) Tests (TDD preferred)
 
-- [ ] Unit tests:
-  - [ ] Prompt builder emits constraints and exemplars.
-  - [ ] Parser validates schema and surfaces errors; retry path covered.
-  - [ ] Services handle caps and truncated inputs.
+- [x] Unit tests:
+  - [x] Prompt builder emits constraints and exemplars.
+  - [x] Parser validates schema and surfaces errors; retry path covered.
+  - [x] Services handle caps and truncated inputs.
 - [ ] Integration tests:
   - [ ] CLI with `--preflight-extract` produces `points.json` with valid schema.
   - [ ] CLI with `--preflight-build-queries` produces `queries.json` with valid schema.
