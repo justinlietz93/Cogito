@@ -167,6 +167,36 @@ def test_call_openai_with_retry_sets_chat_max_tokens(monkeypatch: pytest.MonkeyP
     assert captured["max_tokens"] == 321
 
 
+def test_call_openai_with_retry_sets_chat_max_completion_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reasoning chat models should forward the ``max_completion_tokens`` argument."""
+
+    captured: Dict[str, Any] = {}
+
+    def _create(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="Resp"))])
+
+    class DummyClient:
+        def __init__(self, api_key: str) -> None:
+            self.responses = SimpleNamespace(create=lambda **_: None)
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=_create))
+
+    monkeypatch.setattr(openai_client, "OpenAI", DummyClient)
+
+    openai_client.call_openai_with_retry(
+        prompt_template="Prompt",
+        context={},
+        config={"api": {"openai": {"model": "gpt-4.1-mini", "resolved_key": "key"}}},
+        is_structured=False,
+        max_tokens=222,
+    )
+
+    assert captured["max_completion_tokens"] == 222
+    assert "max_tokens" not in captured
+
+
 def test_call_openai_with_retry_uses_configured_max_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
     """Configured ``max_tokens`` values should be forwarded to chat completions."""
 
