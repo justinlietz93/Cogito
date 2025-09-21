@@ -25,6 +25,11 @@ from .configuration import ModuleConfigBuilder
 from .ports import ContentRepositoryFactory, CritiqueGateway
 from .requests import DirectoryInputRequest, FileInputRequest, LiteralTextInputRequest
 from ...pipeline_input import InvalidPipelineInputError, PipelineInput
+from ..preflight.orchestrator import (
+    PreflightOptions,
+    PreflightOrchestrator,
+    PreflightRunResult,
+)
 
 
 @dataclass
@@ -36,6 +41,7 @@ class CritiqueRunResult:
     scientific_mode_enabled: bool
     module_config: Dict[str, Any]
     pipeline_input: PipelineInput
+    preflight: Optional[PreflightRunResult] = None
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,17 +56,22 @@ class CritiqueRunner:
         config_builder: ModuleConfigBuilder,
         gateway: CritiqueGateway,
         repository_factory: ContentRepositoryFactory,
+        *,
+        preflight_orchestrator: PreflightOrchestrator | None = None,
     ) -> None:
         self._settings_service = settings_service
         self._config_builder = config_builder
         self._gateway = gateway
         self._repository_factory = repository_factory
+        self._preflight_orchestrator = preflight_orchestrator
 
     def run(
         self,
         input_source: Any,
         peer_review: Optional[bool] = None,
         scientific_mode: Optional[bool] = None,
+        *,
+        preflight_options: Optional[PreflightOptions] = None,
     ) -> CritiqueRunResult:
         """Execute the critique pipeline for the supplied input source.
 
@@ -69,6 +80,11 @@ class CritiqueRunner:
                 describing how to resolve the content.
             peer_review: Optional override for enabling peer review.
             scientific_mode: Optional override for enabling scientific mode.
+            preflight_options: Optional configuration describing which preflight
+                stages to execute prior to the critique pipeline. When provided
+                and a preflight orchestrator is configured, extraction and query
+                planning stages run before the critique and their artefacts are
+                attached to the returned metadata.
 
         Returns:
             Result container with formatted critique output and metadata flags.
@@ -92,6 +108,30 @@ class CritiqueRunner:
         )
 
         pipeline_input = self._resolve_pipeline_input(input_source)
+        preflight_result: Optional[PreflightRunResult] = None
+        if preflight_options is not None:
+            if self._preflight_orchestrator is None:
+                _LOGGER.warning(
+                    "event=preflight status=skipped reason=orchestrator_missing"
+                )
+            elif not (
+                preflight_options.enable_extraction or preflight_options.enable_query_building
+            ):
+                _LOGGER.debug(
+                    "event=preflight status=skipped reason=no_stages_enabled"
+                )
+            else:
+                preflight_result = self._preflight_orchestrator.run(
+                    pipeline_input,
+                    preflight_options,
+                )
+                if preflight_result.artifact_paths:
+                    pipeline_input.metadata["preflight_artifacts"] = dict(
+                        preflight_result.artifact_paths
+                    )
+                elif "preflight_artifacts" in pipeline_input.metadata:
+                    del pipeline_input.metadata["preflight_artifacts"]
+
         module_config = self._config_builder.build()
         critique_report = self._gateway.run(
             pipeline_input,
@@ -108,6 +148,7 @@ class CritiqueRunner:
             scientific_mode_enabled=effective_scientific_mode,
             module_config=module_config,
             pipeline_input=pipeline_input,
+            preflight=preflight_result,
         )
 
     def _resolve_pipeline_input(self, input_source: Any) -> PipelineInput:

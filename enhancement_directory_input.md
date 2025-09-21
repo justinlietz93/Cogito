@@ -40,9 +40,9 @@ Instruction to Coding Agent: Use this checklist to create concrete tasks and imp
 - [x] Add services:
   - [x] `ExtractionService.run(PipelineInput) -> ExtractionResult`.
   - [x] `QueryBuildingService.run(ExtractionResult, PipelineInput?) -> QueryPlan`.
-- [ ] Update orchestrator(s) (optional toggle):
-  - [ ] New preflight stage: run extraction → queries before critique, or write artifacts for later stages.
-  - [ ] Record outputs to artifacts directory (JSON files) and attach paths to run metadata.
+- [x] Update orchestrator(s) (optional toggle):
+  - [x] New preflight stage: run extraction → queries before critique, or write artifacts for later stages.
+  - [x] Record outputs to artifacts directory (JSON files) and attach paths to run metadata.
 
 ## 5) CLI / UX
 
