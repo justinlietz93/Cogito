@@ -479,6 +479,42 @@ python run_critique.py sample_content.txt --scientific --PR
 python src/syncretic_catalyst/thesis_builder.py "Quantum computation applied to climate modeling"
 ```
 
+### Preflight Extraction & Query Planning
+
+The critique runner ships with a preflight stage that can summarise source
+material into structured JSON artefacts **before** the main critique. Use it to
+seed downstream review workflows or to inspect the extracted context manually.
+
+1. Ensure your `config.json` includes the preflight defaults added in this
+   release (they ship enabled but disabled by default when provider settings are
+   missing).
+2. Run extraction on a document while customising the artefact path:
+
+   ```bash
+   python run_critique.py sample_content.txt \
+       --preflight-extract \
+       --points-out artifacts/example_points.json
+   ```
+
+   This produces `artifacts/example_points.json` aligned with
+   `src/contexts/schemas/extraction.schema.json`.
+3. Build a query plan in the same pass by enabling both stages and setting
+   explicit caps (they fall back to configuration defaults when omitted):
+
+   ```bash
+   python run_critique.py sample_content.txt \
+       --preflight-extract \
+       --preflight-build-queries \
+       --max-points 8 \
+       --max-queries 5 \
+       --points-out artifacts/example_points.json \
+       --queries-out artifacts/example_queries.json
+   ```
+
+   The CLI persists both artefacts and updates run metadata so downstream steps
+   can discover them automatically. The resulting files validate against the
+   schemas documented in `docs/preflight_json_schemas.md`.
+
 ## Learn More
 
 - [Documentation](docs/)

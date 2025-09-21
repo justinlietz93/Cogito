@@ -108,9 +108,9 @@ Instruction to Coding Agent: Use this checklist to create concrete tasks and imp
 
 ## 11) Documentation
 
-- [ ] README: quickstart for preflight extraction and query building with example commands.
-- [ ] Add short JSON schema docs under `docs/` with sample outputs.
-- [ ] CHANGELOG: note the new preflight stages and artifacts.
+- [x] README: quickstart for preflight extraction and query building with example commands.
+- [x] Add short JSON schema docs under `docs/` with sample outputs.
+- [x] CHANGELOG: note the new preflight stages and artifacts.
 
 ## 12) Performance & Limits
 
