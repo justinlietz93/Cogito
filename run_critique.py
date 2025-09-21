@@ -8,7 +8,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Mapping, Optional
 
 from dotenv import load_dotenv
 
@@ -17,9 +17,10 @@ from src.application.critique.services import CritiqueRunner
 from src.application.user_settings.services import SettingsPersistenceError, UserSettingsService
 from src.domain.user_settings.models import UserSettings
 from src.infrastructure.critique.gateway import ModuleCritiqueGateway
+from src.infrastructure.io.file_repository import FileSystemContentRepositoryFactory
 from src.infrastructure.user_settings.file_repository import JsonFileSettingsRepository
 from src.latex.cli import add_latex_arguments
-from src.presentation.cli.app import CliApp
+from src.presentation.cli.app import CliApp, DirectoryInputDefaults
 
 
 class ConfigLoadError(Exception):
@@ -43,8 +44,104 @@ def setup_logging() -> None:
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run the Cogito critique council from the command line.",
+        epilog=(
+            "Directory usage example:\n"
+            "  python run_critique.py --input-dir ./notes --include \"**/*.md\" \\"
+            "\n    --exclude \"**/drafts/**\" --max-files 50 --max-chars 750000\n"
+            "Configuration defaults live under critique.directory_input in config.json."
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument("input_file", nargs="?", help="Path to the document to critique.")
+    parser.add_argument(
+        "--input-dir",
+        dest="input_dir",
+        help="Directory containing documents to aggregate for critique.",
+    )
+    parser.add_argument(
+        "--include",
+        dest="include",
+        help=(
+            "Comma-separated glob patterns to include (default sourced from "
+            "configuration critique.directory_input.include)."
+        ),
+    )
+    parser.add_argument(
+        "--exclude",
+        dest="exclude",
+        help=(
+            "Comma-separated glob patterns to exclude (default sourced from "
+            "configuration critique.directory_input.exclude)."
+        ),
+    )
+    parser.add_argument(
+        "--order",
+        dest="order",
+        help="Comma-separated list of relative paths defining explicit aggregation order.",
+    )
+    parser.add_argument(
+        "--order-from",
+        dest="order_from",
+        help="Path to a text or JSON file describing the explicit file order.",
+    )
+    parser.add_argument(
+        "--max-files",
+        dest="max_files",
+        type=int,
+        help=(
+            "Maximum number of files to aggregate (default from configuration "
+            "critique.directory_input.max_files)."
+        ),
+    )
+    parser.add_argument(
+        "--max-chars",
+        dest="max_chars",
+        type=int,
+        help=(
+            "Maximum total characters to read across all files (default from "
+            "configuration critique.directory_input.max_chars)."
+        ),
+    )
+    parser.add_argument(
+        "--section-separator",
+        dest="section_separator",
+        help=(
+            "String inserted between aggregated sections (default from "
+            "configuration critique.directory_input.section_separator)."
+        ),
+    )
+    parser.add_argument(
+        "--label-sections",
+        dest="label_sections",
+        action="store_true",
+        help=(
+            "Prefix each aggregated file with a heading label (default from "
+            "configuration critique.directory_input.label_sections)."
+        ),
+    )
+    parser.add_argument(
+        "--no-label-sections",
+        dest="label_sections",
+        action="store_false",
+        help="Disable automatic heading labels for aggregated files.",
+    )
+    parser.add_argument(
+        "--recursive",
+        dest="recursive",
+        action="store_true",
+        help=(
+            "Traverse sub-directories when aggregating directory inputs (default "
+            "from configuration critique.directory_input.recursive)."
+        ),
+    )
+    parser.add_argument(
+        "--no-recursive",
+        dest="recursive",
+        action="store_false",
+        help=(
+            "Disable sub-directory traversal when aggregating directory inputs."
+        ),
+    )
     parser.add_argument(
         "--peer-review",
         "--PR",
@@ -102,6 +199,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
         peer_review=None,
         scientific_mode=None,
         interactive_mode=None,
+        label_sections=None,
+        recursive=None,
     )
     parser = add_latex_arguments(parser)
     return parser
@@ -122,6 +221,70 @@ def load_config(path: Path) -> Dict[str, Any]:
         raise ConfigLoadError(
             f"Configuration file '{path}' could not be read: {exc}"
         ) from exc
+
+
+def extract_directory_defaults(
+    config: Mapping[str, Any],
+    *,
+    section: str = "critique",
+    override_key: Optional[str] = None,
+) -> DirectoryInputDefaults:
+    """Build directory input defaults from the loaded configuration mapping.
+
+    Args:
+        config: Parsed configuration dictionary loaded from ``config.json`` or a
+            compatible mapping structure.
+        section: Top-level configuration section containing the directory input
+            settings. Defaults to ``"critique"`` which matches the existing CLI
+            configuration layout.
+        override_key: Optional identifier selecting entries within the
+            ``directory_input_overrides`` mapping. When ``None`` the function
+            falls back to an override keyed by ``section`` if present.
+
+    Returns:
+        Instance of :class:`DirectoryInputDefaults` populated with values from
+        ``config`` when present, otherwise falling back to baked-in defaults and
+        any applicable overrides.
+
+    Raises:
+        None.
+
+    Side Effects:
+        None.
+
+    Timeout:
+        Not applicable; computation is purely in-memory.
+    """
+
+    section_mapping = config.get(section, {})
+    if not isinstance(section_mapping, Mapping):
+        return DirectoryInputDefaults()
+
+    directory_section = section_mapping.get("directory_input", {})
+    if isinstance(directory_section, Mapping):
+        defaults = DirectoryInputDefaults.from_mapping(directory_section)
+    else:
+        defaults = DirectoryInputDefaults()
+
+    overrides_container = section_mapping.get("directory_input_overrides", {})
+    if not isinstance(overrides_container, Mapping):
+        return defaults
+
+    override_mappings: list[Mapping[str, Any]] = []
+
+    default_override = overrides_container.get("default")
+    if isinstance(default_override, Mapping):
+        override_mappings.append(default_override)
+
+    candidate_key = override_key or section
+    specific_override = overrides_container.get(candidate_key)
+    if isinstance(specific_override, Mapping):
+        override_mappings.append(specific_override)
+
+    for override_mapping in override_mappings:
+        defaults = defaults.with_overrides(override_mapping)
+
+    return defaults
 
 
 def determine_config_path(args: argparse.Namespace, settings_service: UserSettingsService) -> Path:
@@ -186,8 +349,19 @@ def main() -> None:
         sys.exit(1)
 
     config_builder = ModuleConfigBuilder(base_config, settings_service, os.getenv)
-    critique_runner = CritiqueRunner(settings_service, config_builder, ModuleCritiqueGateway())
-    cli_app = CliApp(settings_service, critique_runner)
+    repository_factory = FileSystemContentRepositoryFactory()
+    critique_runner = CritiqueRunner(
+        settings_service,
+        config_builder,
+        ModuleCritiqueGateway(),
+        repository_factory,
+    )
+    directory_defaults = extract_directory_defaults(base_config)
+    cli_app = CliApp(
+        settings_service,
+        critique_runner,
+        directory_defaults=directory_defaults,
+    )
 
     interactive = should_run_interactive(args)
     cli_app.run(args, interactive=interactive)

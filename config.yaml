@@ -29,6 +29,30 @@ reasoning_tree:
 council_orchestrator:
   synthesis_confidence_threshold: 0.4
 
+# Directory input configuration
+critique:
+  directory_input:
+    enabled: true
+    include:
+      - "**/*.md"
+      - "**/*.txt"
+    exclude:
+      - "**/.git/**"
+      - "**/node_modules/**"
+    recursive: true
+    max_files: 200
+    max_chars: 1000000
+    section_separator: "\n\n---\n\n"
+    label_sections: true
+  directory_input_overrides:
+    syncretic_catalyst:
+      order:
+        - PROJECT_OVERVIEW.md
+        - RESEARCH_CONTEXT.md
+        - NEXT_STEPS.md
+      label_sections: false
+      section_separator: "\n\n---\n\n"
+
 # ArXiv Configuration
 arxiv:
   # Whether to enable ArXiv reference lookups during content assessment

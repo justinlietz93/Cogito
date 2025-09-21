@@ -9,6 +9,7 @@ from typing import List
 import pytest
 from unittest.mock import MagicMock
 
+from src.application.critique.requests import FileInputRequest
 from src.presentation.cli.app import CliApp
 
 from .helpers import FakeSettings, FakeSettingsService, make_app, make_input
@@ -50,7 +51,8 @@ def test_interactive_run_flow_uses_prompts(monkeypatch: pytest.MonkeyPatch, tmp_
 
     assert calls
     args, kwargs = calls[0]
-    assert args[0] == input_path
+    assert isinstance(args[0], FileInputRequest)
+    assert args[0].path == input_path
     assert kwargs["latex_args"] is latex_args
 
 
