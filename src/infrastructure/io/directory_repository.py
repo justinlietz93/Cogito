@@ -1,17 +1,19 @@
-"""File-system backed content repositories for critique inputs.
+"""Directory-backed content repository implementations.
 
 Purpose:
-    Provide infrastructure implementations of the :class:`ContentRepository`
-    protocol that aggregate files from disk into :class:`PipelineInput`
-    instances.
+    Provide infrastructure implementations that aggregate directory trees into
+    :class:`~src.pipeline_input.PipelineInput` instances for critique pipelines
+    while enforcing filtering, ordering, and truncation semantics defined by the
+    application layer.
 External Dependencies:
-    Python standard library modules ``fnmatch``, ``hashlib``, and ``pathlib``.
+    Python standard library modules ``fnmatch``, ``hashlib``, ``json``, and
+    ``pathlib``.
 Fallback Semantics:
-    Repository behaviour is driven by the supplied application DTOs. No implicit
-    fallbacks are applied beyond skipping unreadable files.
+    Unreadable or non-text files are skipped with logged warnings. No implicit
+    retries are attempted beyond the configured aggregation options.
 Timeout Strategy:
-    No explicit timeout handling is defined; callers should wrap invocations when
-    executing in latency-sensitive environments.
+    Not defined at this layer. Callers should provide their own timeout handling
+    when invoking long-running operations.
 """
 
 from __future__ import annotations
@@ -24,106 +26,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, List, Optional, Sequence, Tuple
 
-from ...application.critique.ports import ContentRepository, ContentRepositoryFactory
-from ...application.critique.requests import DirectoryInputRequest, FileInputRequest
+from ...application.critique.ports import ContentRepository
+from ...application.critique.requests import DirectoryInputRequest
 from ...pipeline_input import (
     AggregatedContentMetadata,
     EmptyPipelineInputError,
     FileSegmentMetadata,
     PipelineInput,
+    UnreadableFileError,
     pipeline_input_from_aggregated_content,
 )
 
+__all__ = ["DirectoryContentRepository"]
+
+
 _LOGGER = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class FileSystemContentRepositoryFactory(ContentRepositoryFactory):
-    """Factory producing repository instances for file-system backed inputs."""
-
-    encoding: str = "utf-8"
-
-    def create_for_file(self, request: FileInputRequest) -> ContentRepository:
-        return SingleFileContentRepository(request, encoding=self.encoding)
-
-    def create_for_directory(self, request: DirectoryInputRequest) -> ContentRepository:
-        return DirectoryContentRepository(request, encoding=self.encoding)
-
-
-@dataclass
-class SingleFileContentRepository(ContentRepository):
-    """Load pipeline input from a single UTF-8 text file."""
-
-    request: FileInputRequest
-    encoding: str = "utf-8"
-
-    def load_input(self) -> PipelineInput:
-        """Read the configured file and return a ``PipelineInput`` instance.
-
-        Returns:
-            Pipeline input populated with file content and metadata describing the
-            source file.
-
-        Raises:
-            FileNotFoundError: When the path does not exist or is not a regular file.
-            UnicodeDecodeError: If the file cannot be decoded using the configured
-                encoding.
-            EmptyPipelineInputError: When the file contains only whitespace.
-
-        Side Effects:
-            Reads the target file from disk.
-
-        Timeout:
-            Not enforced; callers may wrap invocations as required.
-        """
-
-        resolved = self.request.path.expanduser().resolve()
-        if not resolved.exists():
-            raise FileNotFoundError(f"Input file not found: {resolved}")
-        if not resolved.is_file():
-            raise FileNotFoundError(f"Input path is not a file: {resolved}")
-        if resolved.is_symlink():
-            raise FileNotFoundError(f"Symlinks are not supported for critique inputs: {resolved}")
-
-        data = resolved.read_bytes()
-        try:
-            text = data.decode(self.encoding)
-        except UnicodeDecodeError as exc:
-            raise UnicodeDecodeError(
-                exc.encoding or self.encoding,
-                exc.object,
-                exc.start,
-                exc.end,
-                f"{exc.reason} (while decoding {resolved})",
-            ) from exc
-
-        if not text.strip():
-            raise EmptyPipelineInputError("Resolved file is empty.")
-
-        digest = hashlib.sha256(data).hexdigest()
-        segment = FileSegmentMetadata(
-            path=resolved.name,
-            start_offset=0,
-            end_offset=len(text),
-            byte_count=len(data),
-            sha256_digest=digest,
-        )
-        aggregated = AggregatedContentMetadata.from_segments(
-            input_type="file",
-            segments=[segment],
-            additional_info={"source_path": str(resolved)},
-        )
-
-        extra_metadata = {"source_path": str(resolved)}
-        if self.request.label:
-            extra_metadata["input_label"] = self.request.label
-
-        return pipeline_input_from_aggregated_content(
-            content=text,
-            source=str(resolved),
-            aggregated_metadata=aggregated,
-            extra_metadata=extra_metadata,
-        )
 
 
 @dataclass
@@ -396,9 +313,8 @@ class _DirectoryAggregator:
                 skipped.append(relative)
                 continue
             except OSError as exc:
-                _LOGGER.warning("Skipping unreadable file %s: %s", file_path, exc)
-                skipped.append(relative)
-                continue
+                _LOGGER.error("Failed to read file %s: %s", file_path, exc)
+                raise UnreadableFileError(f"Failed to read {relative}") from exc
 
             segment_result = self._append_file(
                 parts=parts,
@@ -523,10 +439,3 @@ class _DirectoryAggregator:
         truncated_value = value[:remaining]
         parts.append(truncated_value)
         return truncated_value, limit, True
-
-
-__all__ = [
-    "DirectoryContentRepository",
-    "FileSystemContentRepositoryFactory",
-    "SingleFileContentRepository",
-]

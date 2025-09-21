@@ -11,7 +11,7 @@ import pytest
 
 from src.application.critique.exceptions import ConfigurationError, MissingApiKeyError
 from src.application.user_settings.services import SettingsPersistenceError
-from src.pipeline_input import PipelineInput
+from src.pipeline_input import EmptyPipelineInputError, PipelineInput
 from src.presentation.cli.app import DirectoryInputDefaults
 
 from .helpers import FakeSettings, FakeSettingsService, make_app
@@ -189,6 +189,7 @@ def test_directory_request_uses_configuration_defaults(tmp_path: Path) -> None:
     assert descriptor.label_sections is defaults.label_sections
 
 
+
 def test_directory_input_disabled_emits_warning(caplog: pytest.LogCaptureFixture) -> None:
     """Verify disabling directory ingestion surfaces a user-friendly message.
 
@@ -243,6 +244,23 @@ def test_directory_input_disabled_emits_warning(caplog: pytest.LogCaptureFixture
     runner.run.assert_not_called()
 
 
+def test_execute_run_reports_pipeline_input_errors(tmp_path: Path) -> None:
+    """Surface pipeline input errors with a user-friendly message."""
+
+    app, messages, _service, runner, _prompts = make_app()
+    runner.run.side_effect = EmptyPipelineInputError('empty')
+
+    app._execute_run(
+        PipelineInput(content='data'),
+        tmp_path,
+        peer_review=None,
+        scientific_mode=None,
+        latex_args=None,
+        remember_output=False,
+    )
+
+    assert messages[-1] == 'Failed to load input: empty'
+
 @pytest.mark.parametrize(
     "raised, expected",
     [
@@ -250,6 +268,7 @@ def test_directory_input_disabled_emits_warning(caplog: pytest.LogCaptureFixture
         (ConfigurationError("config"), "Configuration error: config"),
     ],
 )
+
 def test_execute_run_handles_known_errors(
     raised: Exception, expected: str, tmp_path: Path
 ) -> None:

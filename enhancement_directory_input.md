@@ -196,7 +196,7 @@ Instruction to Agent: Populate the following categories with concrete, actionabl
     - [x] Update `derive_base_name` utility to strip redundant `_critique` suffixes and respect directory stems.
     - [x] Add regression tests covering both file and directory naming scenarios.
 
-- [ ] Infrastructure (File I/O)
+- [x] Infrastructure (File I/O)
   - [x] Implement `DirectoryContentRepository` (enumerate, filter, order, read, hash, concat)
     - [x] Create repository module under `src/infrastructure/io/` with full docstrings and streaming read implementation.
     - [x] Support explicit ordering, lexicographic fallback, and UTF-8 decode validation with skip + log behavior.
@@ -205,13 +205,13 @@ Instruction to Agent: Populate the following categories with concrete, actionabl
     - [x] Validate resolved paths remain within the declared root and reject/skip symlinks by default.
     - [x] Enforce `max_files` and `max_chars` thresholds with structured truncation metadata and warnings routed through logger.
 
-- [ ] Domain Models & DTOs
+- [x] Domain Models & DTOs
   - [x] Add directory metadata model (path, offsets, bytes, sha256)
     - [x] Define immutable dataclass or pydantic-free structure representing per-file metadata with docstrings.
     - [x] Integrate metadata into `PipelineInput` without introducing infrastructure dependencies.
-  - [ ] Ensure domain remains framework-agnostic
+  - [x] Ensure domain remains framework-agnostic
     - [x] Review imports to confirm no presentation/infrastructure modules leak into domain/application layers post-refactor.
-    - [ ] Add unit tests or static checks enforcing absence of forbidden dependencies if practical.
+    - [x] Add unit tests or static checks enforcing absence of forbidden dependencies if practical.
 
 - [ ] Configuration & Defaults
   - [x] Add `critique.directory_input` defaults to `config.json`
@@ -221,10 +221,10 @@ Instruction to Agent: Populate the following categories with concrete, actionabl
     - [ ] Identify pipelines needing overrides and expose configuration hooks for customizing repository parameters.
     - [ ] Document override usage within configuration docs or inline comments.
 
-- [ ] Error Handling & Logging
-  - [ ] Raise explicit exceptions for invalid dir/empty selection/unreadable file
-    - [ ] Map repository errors to user-friendly CLI messages while preserving stack context for debugging.
-    - [ ] Add tests covering failure cases (missing dir, permissions, decode errors) to ensure reliability.
+- [x] Error Handling & Logging
+  - [x] Raise explicit exceptions for invalid dir/empty selection/unreadable file
+    - [x] Map repository errors to user-friendly CLI messages while preserving stack context for debugging.
+    - [x] Add tests covering failure cases (missing dir, permissions, decode errors) to ensure reliability.
   - [x] Structured logs for counts/bytes/truncation (no content logging)
     - [x] Introduce logging helpers that emit structured dictionaries for instrumentation without leaking content.
     - [x] Verify logs integrate with existing logging configuration through manual smoke test or unit assertion.

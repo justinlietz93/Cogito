@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 
 from src.application.critique.requests import DirectoryInputRequest, FileInputRequest
-from src.infrastructure.io.content_repository import (
-    DirectoryContentRepository,
+from src.infrastructure.io.directory_repository import DirectoryContentRepository
+from src.infrastructure.io.file_repository import (
     FileSystemContentRepositoryFactory,
     SingleFileContentRepository,
 )
-from src.pipeline_input import PipelineInput
+from src.pipeline_input import PipelineInput, UnreadableFileError
 
 
 def test_single_file_repository_loads_text(tmp_path: Path) -> None:
@@ -205,6 +205,46 @@ def test_directory_repository_skips_non_text(tmp_path: Path, caplog: pytest.LogC
     assert info["skipped_files"] == ("bad.bin",)
     assert info["skipped_file_count"] == 1
 
+
+
+
+def test_directory_repository_missing_root_raises() -> None:
+    """Ensure missing directories raise a clear FileNotFoundError."""
+
+    request = DirectoryInputRequest(root=Path('does-not-exist'))
+    repository = DirectoryContentRepository(request)
+
+    with pytest.raises(FileNotFoundError):
+        repository.load_input()
+
+
+
+def test_directory_repository_raises_on_unreadable_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Raise an explicit error when a file cannot be read."""
+
+    root = tmp_path / 'docs'
+    root.mkdir()
+    unreadable = root / 'restricted.md'
+    unreadable.write_text('secret', encoding='utf-8')
+
+    request = DirectoryInputRequest(root=root)
+    repository = DirectoryContentRepository(request)
+
+    original_read_bytes = Path.read_bytes
+
+    def patched_read_bytes(self: Path) -> bytes:
+        if self == unreadable:
+            raise PermissionError('denied')
+        return original_read_bytes(self)
+
+    monkeypatch.setattr(Path, 'read_bytes', patched_read_bytes)
+
+    with pytest.raises(UnreadableFileError) as exc_info:
+        repository.load_input()
+
+    assert 'restricted.md' in str(exc_info.value)
 
 def test_directory_repository_ignores_symlink_traversal(tmp_path: Path) -> None:
     """Ensure symlinks pointing outside the root directory are ignored.

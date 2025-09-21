@@ -17,7 +17,7 @@ from src.application.critique.services import CritiqueRunner
 from src.application.user_settings.services import SettingsPersistenceError, UserSettingsService
 from src.domain.user_settings.models import UserSettings
 from src.infrastructure.critique.gateway import ModuleCritiqueGateway
-from src.infrastructure.io.content_repository import FileSystemContentRepositoryFactory
+from src.infrastructure.io.file_repository import FileSystemContentRepositoryFactory
 from src.infrastructure.user_settings.file_repository import JsonFileSettingsRepository
 from src.latex.cli import add_latex_arguments
 from src.presentation.cli.app import CliApp, DirectoryInputDefaults

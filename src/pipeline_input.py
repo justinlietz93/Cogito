@@ -34,6 +34,10 @@ class EmptyPipelineInputError(PipelineInputError):
     """Raised when the resolved pipeline content is empty."""
 
 
+class UnreadableFileError(PipelineInputError):
+    """Raised when a repository cannot read a required input file."""
+
+
 @dataclass
 class PipelineInput:
     """Canonical representation of input provided to processing pipelines."""
@@ -331,6 +335,7 @@ __all__ = [
     "InvalidPipelineInputError",
     "PipelineInput",
     "PipelineInputError",
+    "UnreadableFileError",
     "ensure_pipeline_input",
     "pipeline_input_from_aggregated_content",
 ]
