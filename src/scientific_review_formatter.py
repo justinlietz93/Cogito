@@ -13,6 +13,13 @@ from typing import Dict, Any, Optional, Tuple
 
 # Import provider factory for LLM clients
 from .providers import ApiKeyError, ProviderError, call_with_retry
+from .prompt_texts import (
+    SCIENTIFIC_REVIEW_METHOD_REFERENCES_GUIDANCE,
+    SCIENTIFIC_REVIEW_METHOD_SECTION_GUIDANCE,
+    SCIENTIFIC_REVIEW_PHILOSOPHY_REFERENCES_GUIDANCE,
+    SCIENTIFIC_REVIEW_PHILOSOPHY_SECTION_GUIDANCE,
+    SCIENTIFIC_REVIEW_PROMPT_TEMPLATE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -169,72 +176,22 @@ def format_scientific_peer_review(
     
     # Prepare the main prompt, adjusting for scientific mode if needed
     if scientific_mode:
-        section_guidance = """
-        5. Methodological Analysis Frameworks - ESSENTIAL SECTION with detailed subsections:
-           a. Systems Analysis (min. 250 words)
-           b. First Principles Analysis (min. 250 words)
-           c. Boundary Condition Analysis (min. 250 words)
-           d. Optimization & Sufficiency Analysis (min. 250 words)
-           e. Empirical Validation Analysis (min. 250 words)
-           f. Logical Structure Analysis (min. 250 words)
-        """
-        
-        references_guidance = """
-        7. References (include at least 10-15 relevant academic sources in APA format)
-           a. Include methodological references for each analytical approach
-           b. Include contemporary academic sources related to the subject matter
-           c. Include research methodology references that support your recommended improvements
-        """
+        section_guidance = SCIENTIFIC_REVIEW_METHOD_SECTION_GUIDANCE
+        references_guidance = SCIENTIFIC_REVIEW_METHOD_REFERENCES_GUIDANCE
+        mode_description = "scientific methodology"
     else:
-        section_guidance = """
-        5. Perspective-specific contributions - ESSENTIAL SECTION with detailed subsections:
-           a. Aristotelian analysis (min. 250 words)
-           b. Cartesian analysis (min. 250 words)
-           c. Kantian analysis (min. 250 words)
-           d. Leibnizian analysis (min. 250 words)
-           e. Popperian analysis (min. 250 words)
-           f. Russellian analysis (min. 250 words)
-        """
-        
-        references_guidance = """
-        7. References (include at least 10-15 relevant academic sources in APA format)
-           a. Include works by each philosopher mentioned (Aristotle, Descartes, Kant, Leibniz, Popper, Russell)
-           b. Include contemporary academic sources related to the subject matter
-           c. Include methodological references that support your recommended improvements
-        """
-    
-    # Format the prompt
-    prompt = f"""
-    Your task is to transform a {"scientific methodology" if scientific_mode else "philosophical"} critique report into a comprehensive formal scientific peer review document. This document should be a serious and legitimate attempt at scrutinizing the original content from a subject matter expert perspective, finding any gaps or holes in the logic with feedback for the author. The review should be structured and formatted according to the standards of academic publishing.
+        section_guidance = SCIENTIFIC_REVIEW_PHILOSOPHY_SECTION_GUIDANCE
+        references_guidance = SCIENTIFIC_REVIEW_PHILOSOPHY_REFERENCES_GUIDANCE
+        mode_description = "philosophical"
 
-    You have access to:
-    1. The ORIGINAL CONTENT that was analyzed
-    2. A CRITIQUE REPORT produced by a council of {"scientific methodology" if scientific_mode else "philosophical"} critics
-    
-    Create a substantive and expansive formal peer review following scientific publishing standards.
-    Present yourself as a domain expert with credentials relevant to the content.
-    Focus on methodology, evidence, logic, scientific accuracy, and scholarly merit.
-    
-    The beginning of your review MUST include:
-    1. Your full academic name and credentials (e.g., "Dr. Jonathan Smith, Ph.D.")
-    2. Your institutional affiliation
-    3. Your area of expertise
-    
-    Structure the review following this expanded academic peer review format:
-    1. Brief summary of the work (1-2 paragraphs)
-    2. Clear recommendation (accept/reject/revise)
-    3. Major concerns (numbered, detailed analysis with at least 5-7 significant issues)
-    4. Minor concerns (numbered, at least 3-5 issues)
-    {section_guidance}
-    6. Conclusion
-    {references_guidance}
-    
-    # ORIGINAL CONTENT:
-    {original_content}
-    
-    # CRITIQUE REPORT:
-    {critique_report}
-    """
+    # Format the prompt
+    prompt = SCIENTIFIC_REVIEW_PROMPT_TEMPLATE.format(
+        mode_description=mode_description,
+        section_guidance=section_guidance,
+        references_guidance=references_guidance,
+        original_content=original_content,
+        critique_report=critique_report,
+    )
     
     provider_key = "openai"
     try:

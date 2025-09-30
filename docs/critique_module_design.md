@@ -120,7 +120,7 @@ def critique_goal_document(file_path: str) -> str:
             # Calls reasoning_tree.execute_reasoning_tree (potentially)
             pass
     ```
-*   **Concrete Implementations:** E.g., `AristotleAgent(PhilosopherAgent)`, `DescartesAgent(PhilosopherAgent)`, etc. Loads directives from `prompts/` directory.
+*   **Concrete Implementations:** E.g., `AristotleAgent(PhilosopherAgent)`, `DescartesAgent(PhilosopherAgent)`, etc. Loads directives from `src/prompt_texts.py` constants.
 
 ### 4.4. Reasoning Tree (`reasoning_tree.py`)
 
@@ -185,14 +185,14 @@ def critique_goal_document(file_path: str) -> str:
 
 ### 6.1. Agent Personas & Philosophies
 
-The council will consist of agents embodying the philosophies of specific thinkers, using directives loaded from the `prompts/` directory (expected sibling to `src/`). The goal is a meticulous critique based on each philosopher's core principles.
+The council will consist of agents embodying the philosophies of specific thinkers, using directives loaded from the consolidated prompt constants in `src/prompt_texts.py`. The goal is a meticulous critique based on each philosopher's core principles.
 
-*   **Aristotle:** Focuses on teleology (purpose), causality (four causes), logic (syllogisms), empirical observation, and categorization. Heuristic: *Analyze purpose, logical structure, empirical grounding, and classification.* (Uses `prompts/critique_aristotle.txt`)
-*   **Descartes:** Employs radical doubt, seeks clear and distinct ideas, emphasizes rationalism and foundationalism. Heuristic: *Apply methodical doubt, seek indubitable foundations, analyze clarity and distinctness.* (Uses `prompts/critique_descartes.txt`)
-*   **Kant:** Examines preconditions of understanding (categories, forms of intuition), distinguishes analytic/synthetic judgments, focuses on universalizability and duty (ethics). Heuristic: *Analyze underlying structure of arguments, consistency with universal principles, clarity of concepts.* (Uses `prompts/critique_kant.txt`)
-*   **Leibniz:** Focuses on the principle of sufficient reason, monadology, optimism (best possible world), and logical calculus. Heuristic: *Seek underlying reasons, analyze internal consistency and completeness, evaluate optimality of structure/argument.* (Uses `prompts/critique_leibniz.txt`)
-*   **Popper:** Emphasizes falsifiability, critical rationalism, and the demarcation problem. Heuristic: *Assess claims for falsifiability, identify potential refutations, analyze clarity and testability.* (Uses `prompts/critique_popper.txt`)
-*   **Russell:** Focuses on logical atomism, analytic philosophy, clarity of language, and avoidance of paradox. Heuristic: *Analyze propositions into simplest components, evaluate linguistic precision, check for logical contradictions.* (Uses `prompts/critique_russell.txt`)
+*   **Aristotle:** Focuses on teleology (purpose), causality (four causes), logic (syllogisms), empirical observation, and categorization. Heuristic: *Analyze purpose, logical structure, empirical grounding, and classification.* (Defined as `CRITIQUE_ARISTOTLE_PROMPT` in `src/prompt_texts.py`)
+*   **Descartes:** Employs radical doubt, seeks clear and distinct ideas, emphasizes rationalism and foundationalism. Heuristic: *Apply methodical doubt, seek indubitable foundations, analyze clarity and distinctness.* (Defined as `CRITIQUE_DESCARTES_PROMPT`)
+*   **Kant:** Examines preconditions of understanding (categories, forms of intuition), distinguishes analytic/synthetic judgments, focuses on universalizability and duty (ethics). Heuristic: *Analyze underlying structure of arguments, consistency with universal principles, clarity of concepts.* (Defined as `CRITIQUE_KANT_PROMPT`)
+*   **Leibniz:** Focuses on the principle of sufficient reason, monadology, optimism (best possible world), and logical calculus. Heuristic: *Seek underlying reasons, analyze internal consistency and completeness, evaluate optimality of structure/argument.* (Defined as `CRITIQUE_LEIBNIZ_PROMPT`)
+*   **Popper:** Emphasizes falsifiability, critical rationalism, and the demarcation problem. Heuristic: *Assess claims for falsifiability, identify potential refutations, analyze clarity and testability.* (Defined as `CRITIQUE_POPPER_PROMPT`)
+*   **Russell:** Focuses on logical atomism, analytic philosophy, clarity of language, and avoidance of paradox. Heuristic: *Analyze propositions into simplest components, evaluate linguistic precision, check for logical contradictions.* (Defined as `CRITIQUE_RUSSELL_PROMPT`)
 
 ### 6.2. Interaction Flow
 
