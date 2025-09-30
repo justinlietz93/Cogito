@@ -1,3 +1,4 @@
+
 CRITIQUE_ARISTOTLE_PROMPT = f'''
 """
 Critique Prompt for Checklist Steps - Analytical Framework (V2.4)
