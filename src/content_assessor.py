@@ -12,6 +12,8 @@ import json
 import os
 from typing import Dict, List, Any, Optional
 
+from .prompt_texts import CONTENT_EXTRACTION_PROMPT
+
 from .providers import call_with_retry
 from .arxiv_reference_service import ArxivReferenceService
 
@@ -205,42 +207,7 @@ class ContentAssessor:
         Returns:
             A prompt string.
         """
-        return f"""
-        You are an objective content assessor. Your task is to extract a comprehensive list of distinct factual claims, 
-        statements, or points made in the provided content. Do NOT provide any analysis, critique, or evaluation of these points.
-        Simply extract and list them objectively.
-
-        Guidelines:
-        1. Identify ALL distinct points, claims, or statements in the content
-        2. Focus on extracting the substance of each claim without adding interpretation
-        3. Extract points at a medium level of granularity (not too broad, not too specific)
-        4. Include ALL significant claims, not just the main ones
-        5. Do NOT provide any evaluation or judgment of the points
-        6. Do NOT skip any significant claims
-        7. Each point should be distinct and non-overlapping with others
-        8. Number the points starting from 1
-        9. Points must accurately reflect what's in the content, not what you think should be there
-
-        CONTENT TO ANALYZE:
-        {content}
-
-        Your response must be a JSON object with the following structure:
-        {{
-            "points": [
-                {{
-                    "id": "point-1",
-                    "point": "The first objective point extracted from the content"
-                }},
-                {{
-                    "id": "point-2",
-                    "point": "The second objective point extracted from the content"
-                }},
-                ...
-            ]
-        }}
-
-        Extract at least 10 points (or as many as the content contains if fewer than 10).
-        """
+        return CONTENT_EXTRACTION_PROMPT.format(content=content)
     
     def _validate_and_format_points(self, result: Any) -> List[Dict[str, Any]]:
         """

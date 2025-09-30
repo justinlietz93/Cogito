@@ -5,7 +5,6 @@ Defines the base class and specific implementations for reasoning agents
 within the critique council. Supports both philosophical and scientific methodology agents.
 """
 
-import os
 import logging
 import json
 from abc import ABC, abstractmethod
@@ -16,46 +15,24 @@ from .reasoning_tree import execute_reasoning_tree # Now synchronous
 # Import provider factory for LLM clients
 from .providers import call_with_retry
 from .reasoning_agent_self_critique import build_self_critique_adjustments
-
-# Define the base path for prompts relative to this file's location
-PROMPT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'prompts'))
-SCIENTIFIC_PROMPT_DIR = os.path.join(PROMPT_DIR, 'scientific')
-
-# Define the Peer Review enhancement text
-PEER_REVIEW_ENHANCEMENT = """
-
---- PEER REVIEW ENHANCEMENT ---
-Additionally, adopt the rigorous perspective of a deeply technical scientific researcher and subject matter expert within the specific domain of the input content. You must create a UNIQUE scientific persona that reflects both your philosophical tradition and relevant domain expertise.
-
-Your scientific persona MUST include:
-
-1. A UNIQUE full name with appropriate academic title that has not been used by other philosophers
-2. Specific academic credentials (Ph.D. or equivalent in a field that connects your philosophical perspective to the subject matter)
-3. A distinct institutional affiliation (university, research institute, etc.) that differs from other philosophical agents
-4. Relevant specialization and experience in years that aligns with both your philosophical background and the technical domain
-
-IMPORTANT: Your persona should be distinctly different from those created by other philosophical perspectives. If you are the Aristotelian critic, your background might relate to biology, metaphysics, or ethics; if Kantian, perhaps mathematics or epistemology; if Popperian, scientific methodology or falsifiability studies.
-
-Your analysis must reflect this specialized expertise, focusing on technical accuracy, methodological soundness, and advanced domain-specific insights, while still adhering to your core philosophical persona instructions. You MUST introduce yourself with these unique credentials at the beginning of your critique.
---- END PEER REVIEW ENHANCEMENT ---
-"""
-
-# Define the Scientific Peer Review enhancement text
-SCIENTIFIC_PEER_REVIEW_ENHANCEMENT = """
-
---- SCIENTIFIC PEER REVIEW ENHANCEMENT ---
-Additionally, adopt the perspective of a highly credentialed scientific researcher with domain expertise specific to the input content. You must create a UNIQUE scientific persona with relevant specialization.
-
-Your scientific persona MUST include:
-
-1. A UNIQUE full name with appropriate academic title that has not been used by other analysts
-2. Specific academic credentials (Ph.D. or equivalent in a field directly relevant to the subject matter)
-3. A distinct institutional affiliation (university, research institute, etc.) that differs from other scientific analysts
-4. Relevant specialization and experience in years that aligns with your methodological approach and the technical domain
-
-Your analysis must reflect specialized domain expertise, focusing on technical accuracy, methodological soundness, and advanced domain-specific insights, while strictly adhering to your specific scientific methodology. You MUST introduce yourself with these unique credentials at the beginning of your critique.
---- END SCIENTIFIC PEER REVIEW ENHANCEMENT ---
-"""
+from .prompt_texts import (
+    CRITIQUE_ARISTOTLE_PROMPT,
+    CRITIQUE_DESCARTES_PROMPT,
+    CRITIQUE_KANT_PROMPT,
+    CRITIQUE_LEIBNIZ_PROMPT,
+    CRITIQUE_POPPER_PROMPT,
+    CRITIQUE_RUSSELL_PROMPT,
+    EXPERT_ARBITER_PROMPT,
+    PEER_REVIEW_ENHANCEMENT,
+    SCIENTIFIC_BOUNDARY_CONDITION_ANALYST_PROMPT,
+    SCIENTIFIC_EMPIRICAL_VALIDATION_ANALYST_PROMPT,
+    SCIENTIFIC_EXPERT_ARBITER_PROMPT,
+    SCIENTIFIC_FIRST_PRINCIPLES_ANALYST_PROMPT,
+    SCIENTIFIC_LOGICAL_STRUCTURE_ANALYST_PROMPT,
+    SCIENTIFIC_OPTIMIZATION_ANALYST_PROMPT,
+    SCIENTIFIC_PEER_REVIEW_ENHANCEMENT,
+    SCIENTIFIC_SYSTEMS_ANALYST_PROMPT,
+)
 
 module_logger = logging.getLogger(__name__)
 
@@ -171,127 +148,116 @@ class ReasoningAgent(ABC):
 # --- Concrete Agent Base Classes ---
 
 class PromptAgent(ReasoningAgent):
-    """Base class for agents loading directives from prompt files."""
-    def __init__(self, name: str, prompt_filepath: str):
+    """Base class for agents with static prompt directives."""
+
+    def __init__(self, name: str, prompt_text: str):
         super().__init__(name)
-        self.prompt_filepath = prompt_filepath
-        self._directives_cache: str | None = None
+        self._prompt_text = prompt_text
 
     def get_style_directives(self) -> str:
-        """Loads and returns the directives from the agent's prompt file."""
-        current_logger = self.logger
-        if self._directives_cache is None:
-            # Simplified error handling for brevity
-            try:
-                with open(self.prompt_filepath, 'r', encoding='utf-8') as f:
-                    self._directives_cache = f.read()
-                current_logger.debug(f"Directives loaded from {self.prompt_filepath}")
-            except Exception as e:
-                error_msg = f"Failed to read prompt file {self.prompt_filepath}: {e}"
-                current_logger.error(error_msg, exc_info=True)
-                self._directives_cache = f"ERROR: Failed to read prompt file for {self.style}."
-        return self._directives_cache if self._directives_cache is not None else ""
+        return self._prompt_text
+
 
 class PhilosopherAgent(PromptAgent):
     """Base class for philosophical approach agents."""
-    def __init__(self, name: str, prompt_filename: str):
-        prompt_filepath = os.path.join(PROMPT_DIR, prompt_filename)
-        super().__init__(name, prompt_filepath)
+
+    def __init__(self, name: str, prompt_text: str):
+        super().__init__(name, prompt_text)
+
 
 class ScientificAgent(PromptAgent):
     """Base class for scientific methodology agents."""
-    def __init__(self, name: str, prompt_filename: str):
-        prompt_filepath = os.path.join(SCIENTIFIC_PROMPT_DIR, prompt_filename)
-        super().__init__(name, prompt_filepath)
+
+    def __init__(self, name: str, prompt_text: str):
+        super().__init__(name, prompt_text)
 
 # --- Specific Philosopher Agents ---
 
 class AristotleAgent(PhilosopherAgent):
     """Critiques based on Aristotelian principles."""
+
     def __init__(self):
-        super().__init__('Aristotle', 'critique_aristotle.txt')
+        super().__init__('Aristotle', CRITIQUE_ARISTOTLE_PROMPT)
 
 class DescartesAgent(PhilosopherAgent):
     """Critiques based on Cartesian principles."""
+
     def __init__(self):
-        super().__init__('Descartes', 'critique_descartes.txt')
+        super().__init__('Descartes', CRITIQUE_DESCARTES_PROMPT)
 
 class KantAgent(PhilosopherAgent):
     """Critiques based on Kantian principles."""
+
     def __init__(self):
-        super().__init__('Kant', 'critique_kant.txt')
+        super().__init__('Kant', CRITIQUE_KANT_PROMPT)
 
 class LeibnizAgent(PhilosopherAgent):
     """Critiques based on Leibnizian principles."""
+
     def __init__(self):
-        super().__init__('Leibniz', 'critique_leibniz.txt')
+        super().__init__('Leibniz', CRITIQUE_LEIBNIZ_PROMPT)
 
 class PopperAgent(PhilosopherAgent):
     """Critiques based on Popperian principles."""
+
     def __init__(self):
-        super().__init__('Popper', 'critique_popper.txt')
+        super().__init__('Popper', CRITIQUE_POPPER_PROMPT)
 
 class RussellAgent(PhilosopherAgent):
     """Critiques based on Russellian principles."""
+
     def __init__(self):
-        super().__init__('Russell', 'critique_russell.txt')
+        super().__init__('Russell', CRITIQUE_RUSSELL_PROMPT)
 
 # --- Specific Scientific Methodology Agents ---
 
 class SystemsAnalystAgent(ScientificAgent):
     """Critiques based on systems analysis methodology."""
+
     def __init__(self):
-        super().__init__('SystemsAnalyst', 'systems_analyst.txt')
+        super().__init__('SystemsAnalyst', SCIENTIFIC_SYSTEMS_ANALYST_PROMPT)
 
 class FirstPrinciplesAnalystAgent(ScientificAgent):
     """Critiques based on first principles analysis methodology."""
+
     def __init__(self):
-        super().__init__('FirstPrinciplesAnalyst', 'first_principles_analyst.txt')
+        super().__init__('FirstPrinciplesAnalyst', SCIENTIFIC_FIRST_PRINCIPLES_ANALYST_PROMPT)
 
 class BoundaryConditionAnalystAgent(ScientificAgent):
     """Critiques based on boundary condition analysis methodology."""
+
     def __init__(self):
-        super().__init__('BoundaryConditionAnalyst', 'boundary_condition_analyst.txt')
+        super().__init__('BoundaryConditionAnalyst', SCIENTIFIC_BOUNDARY_CONDITION_ANALYST_PROMPT)
 
 class OptimizationAnalystAgent(ScientificAgent):
     """Critiques based on optimization analysis methodology."""
+
     def __init__(self):
-        super().__init__('OptimizationAnalyst', 'optimization_analyst.txt')
+        super().__init__('OptimizationAnalyst', SCIENTIFIC_OPTIMIZATION_ANALYST_PROMPT)
 
 class EmpiricalValidationAnalystAgent(ScientificAgent):
     """Critiques based on empirical validation analysis methodology."""
+
     def __init__(self):
-        super().__init__('EmpiricalValidationAnalyst', 'empirical_validation_analyst.txt')
+        super().__init__('EmpiricalValidationAnalyst', SCIENTIFIC_EMPIRICAL_VALIDATION_ANALYST_PROMPT)
 
 class LogicalStructureAnalystAgent(ScientificAgent):
     """Critiques based on logical structure analysis methodology."""
+
     def __init__(self):
-        super().__init__('LogicalStructureAnalyst', 'logical_structure_analyst.txt')
+        super().__init__('LogicalStructureAnalyst', SCIENTIFIC_LOGICAL_STRUCTURE_ANALYST_PROMPT)
 
 # --- Expert Arbiter Agents ---
 
 class ExpertArbiterBaseAgent(ReasoningAgent):
-    """
-    Base class for arbiter agents that evaluate critiques from different methodologies.
-    """
-    def __init__(self, name: str, prompt_filepath: str):
+    """Base class for arbiter agents that evaluate critiques."""
+
+    def __init__(self, name: str, prompt_text: str):
         super().__init__(name)
-        self.prompt_filepath = prompt_filepath
-        self._directives_cache: str | None = None
+        self._prompt_text = prompt_text
 
     def get_style_directives(self) -> str:
-        """Loads and returns the directives from the arbiter's prompt file."""
-        current_logger = self.logger
-        if self._directives_cache is None:
-            try:
-                with open(self.prompt_filepath, 'r', encoding='utf-8') as f:
-                    self._directives_cache = f.read()
-                current_logger.debug(f"Directives loaded from {self.prompt_filepath}")
-            except Exception as e:
-                error_msg = f"Failed to read arbiter prompt file {self.prompt_filepath}: {e}"
-                current_logger.error(error_msg, exc_info=True)
-                self._directives_cache = f"ERROR: {error_msg}"
-        return self._directives_cache if self._directives_cache is not None else ""
+        return self._prompt_text
     
     def critique(self, content: str, config: Dict[str, Any], agent_logger: Optional[logging.Logger] = None) -> Dict[str, Any]:
         raise NotImplementedError("Arbiter agents do not perform initial critique.")
@@ -300,24 +266,16 @@ class ExpertArbiterBaseAgent(ReasoningAgent):
          raise NotImplementedError("Arbiter agents do not perform self-critique.")
 
 class ExpertArbiterAgent(ExpertArbiterBaseAgent):
-    """
-    Agent responsible for evaluating philosophical critiques from a subject-matter
-    expert perspective, providing context, adjustments, and an overall score.
-    Uses the 'expert_arbiter.txt' prompt.
-    """
+    """Arbiter for philosophical critiques."""
+
     def __init__(self):
-        prompt_filepath = os.path.join(PROMPT_DIR, 'expert_arbiter.txt')
-        super().__init__('ExpertArbiter', prompt_filepath)
+        super().__init__('ExpertArbiter', EXPERT_ARBITER_PROMPT)
 
 class ScientificExpertArbiterAgent(ExpertArbiterBaseAgent):
-    """
-    Agent responsible for evaluating scientific methodology critiques from a subject-matter
-    expert perspective, providing context, adjustments, and an overall score.
-    Uses the 'scientific/expert_arbiter.txt' prompt.
-    """
+    """Arbiter for scientific methodology critiques."""
+
     def __init__(self):
-        prompt_filepath = os.path.join(SCIENTIFIC_PROMPT_DIR, 'expert_arbiter.txt')
-        super().__init__('ScientificExpertArbiter', prompt_filepath)
+        super().__init__('ScientificExpertArbiter', SCIENTIFIC_EXPERT_ARBITER_PROMPT)
 
 # Define the common arbitration method that works for both philosophical and scientific approaches
 def common_arbitrate(self, original_content: str, initial_critiques: List[Dict[str, Any]], config: Dict[str, Any], 

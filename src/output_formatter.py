@@ -8,14 +8,11 @@ including summaries, scores, and detailed agent trees.
 import logging
 import datetime
 import json
-import os
 from typing import Dict, List, Any, Optional, Tuple
 
 # Import provider factory for LLM clients
 from .providers import call_with_retry
-
-# Import the peer review enhancement text
-from .reasoning_agent import PEER_REVIEW_ENHANCEMENT
+from .prompt_texts import JUDGE_SUMMARY_PROMPT, PEER_REVIEW_ENHANCEMENT
 
 logger = logging.getLogger(__name__)
 
@@ -73,12 +70,6 @@ def generate_judge_summary_and_score(original_content: str, adjusted_trees: List
     judge_logger.info(f"Attempting to generate Judge Summary and Score... (Peer Review: {peer_review})")
     default_return = ("Error: Judge summary generation failed.", None, "N/A")
     try:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        prompt_path = os.path.join(base_dir, '..', 'prompts', 'judge_summary.txt')
-        judge_logger.debug(f"Loading Judge prompt from: {prompt_path}")
-        with open(prompt_path, 'r', encoding='utf-8') as f:
-            judge_prompt_template = f.read()
-
         context = {
             "original_content": original_content,
             "adjusted_critique_trees_json": json.dumps(adjusted_trees, indent=2),
@@ -86,7 +77,7 @@ def generate_judge_summary_and_score(original_content: str, adjusted_trees: List
         }
 
         # Apply enhancement if needed
-        final_judge_prompt = judge_prompt_template
+        final_judge_prompt = JUDGE_SUMMARY_PROMPT
         if peer_review:
             final_judge_prompt += PEER_REVIEW_ENHANCEMENT
             judge_logger.info("Peer Review enhancement applied to judge prompt.")
@@ -110,10 +101,6 @@ def generate_judge_summary_and_score(original_content: str, adjusted_trees: List
             judge_logger.warning(f"Unexpected Judge result structure received from {model_used}: {judge_result}")
             return ("Error: Invalid Judge result structure.", None, "N/A")
 
-    except FileNotFoundError:
-        error_msg = f"Judge summary prompt file not found at {prompt_path}"
-        judge_logger.error(error_msg)
-        return f"Error: {error_msg}", None, "N/A"
     except Exception as e:
         error_msg = f"Failed to generate Judge summary/score: {e}"
         judge_logger.error(error_msg, exc_info=True)

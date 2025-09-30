@@ -13,6 +13,10 @@ from ...domain import (
     ThesisResearchResult,
     DEFAULT_AGENT_PROFILES,
 )
+from ...prompt_texts import (
+    THESIS_AGENT_ADDITIONAL_CONTEXT_TEMPLATE,
+    THESIS_AGENT_USER_PROMPT_TEMPLATE,
+)
 from .ports import Clock, ContentGenerator, ReferenceService, ThesisOutputRepository
 
 
@@ -42,29 +46,19 @@ class _ResearchAgentRunner:
         self, concept: str, papers: Sequence[ResearchPaper], context: str | None
     ) -> str:
         paper_information = self._format_papers(papers)
-        prompt = (
-            "Research Task: Please thoroughly research the following concept according to "
-            f"your specific role as a {self.profile.name}.\n\n"
-            f"CONCEPT:\n{concept}\n\n"
-            f"RELEVANT RESEARCH PAPERS:\n{paper_information}\n"
+        context_section = (
+            THESIS_AGENT_ADDITIONAL_CONTEXT_TEMPLATE.format(context=context)
+            if context
+            else ""
         )
 
-        if context:
-            prompt += f"\nADDITIONAL CONTEXT FROM OTHER RESEARCH:\n{context}\n"
-
-        prompt += (
-            "\nRESEARCH OUTPUT REQUESTED:\n"
-            f"Based on your role as a {self.profile.name} ({self.profile.role}), please provide "
-            "a comprehensive research analysis of the given concept. Your analysis should focus "
-            "on your specific area of expertise while incorporating the provided research papers "
-            "and any additional context.\n\n"
-            "Organize your response clearly with appropriate sections and subsections. Include "
-            "specific references to the provided papers where relevant. If mathematical "
-            "formulations are appropriate, include them with clear explanations.\n\n"
-            "Your research should be rigorous, well-reasoned, and academically sound, written "
-            "at the level of a peer-reviewed academic publication."
+        return THESIS_AGENT_USER_PROMPT_TEMPLATE.format(
+            agent_name=self.profile.name,
+            agent_role=self.profile.role,
+            concept=concept,
+            paper_information=paper_information,
+            additional_context_section=context_section,
         )
-        return prompt
 
     @staticmethod
     def _format_papers(papers: Sequence[ResearchPaper]) -> str:

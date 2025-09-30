@@ -11,6 +11,7 @@ import json
 
 # Import the provider factory
 from .providers import call_with_retry, ProviderError, ApiCallError, ApiResponseError, JsonParsingError, JsonProcessingError
+from .prompt_texts import REASONING_TREE_DECOMPOSITION_PROMPT
 
 # Default configuration values
 DEFAULT_MAX_DEPTH = 3
@@ -127,20 +128,7 @@ def execute_reasoning_tree(
 
     # 3. Decomposition Identification (Synchronous Call)
     # (Decomposition logic remains the same, uses a separate prompt)
-    decomposition_prompt_template = """
-Based on the primary critique claim "{claim}", identify specific sub-topics, sub-arguments, or distinct sections within the following content segment that warrant deeper, more focused critique in the next level of analysis.
-
-Style Directives (for context):
-{style_directives}
-
-Content Segment:
-```
-{content}
-```
-
-Return ONLY a JSON list of strings, where each string is a concise description of a sub-topic to analyze further. If no further decomposition is necessary or possible, return an empty list []. Example:
-["The definition of 'synergy' in paragraph 2", "The causality argument in section 3.1", "The empirical evidence cited for claim X"]
-"""
+    decomposition_prompt_template = REASONING_TREE_DECOMPOSITION_PROMPT
     decomposition_context = {
         "claim": claim,
         "style_directives": style_directives, # Pass original style directives for context

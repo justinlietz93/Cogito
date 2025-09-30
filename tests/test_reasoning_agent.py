@@ -1,10 +1,10 @@
 # tests/test_reasoning_agent.py
 
 import logging
-import pytest
 import os
+import pytest
 import sys
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 # Adjust path to import from the new src directory
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -20,10 +20,8 @@ from src.reasoning_agent import (
     LeibnizAgent,
     LogicalStructureAnalystAgent,
     PEER_REVIEW_ENHANCEMENT,
-    PROMPT_DIR,
     ReasoningAgent,
     RussellAgent,
-    SCIENTIFIC_PROMPT_DIR,
     SCIENTIFIC_PEER_REVIEW_ENHANCEMENT,
     ScientificExpertArbiterAgent,
     SystemsAnalystAgent,
@@ -31,23 +29,23 @@ from src.reasoning_agent import (
     PopperAgent,
 )
 
-# List of agent classes and their expected prompt filenames
+# List of agent classes for coverage
 AGENT_TEST_PARAMS = [
-    (AristotleAgent, 'critique_aristotle.txt'),
-    (DescartesAgent, 'critique_descartes.txt'),
-    (KantAgent, 'critique_kant.txt'),
-    (LeibnizAgent, 'critique_leibniz.txt'),
-    (PopperAgent, 'critique_popper.txt'),
-    (RussellAgent, 'critique_russell.txt'),
+    AristotleAgent,
+    DescartesAgent,
+    KantAgent,
+    LeibnizAgent,
+    PopperAgent,
+    RussellAgent,
 ]
 
 SCIENTIFIC_AGENT_TEST_PARAMS = [
-    (SystemsAnalystAgent, 'systems_analyst.txt'),
-    (FirstPrinciplesAnalystAgent, 'first_principles_analyst.txt'),
-    (BoundaryConditionAnalystAgent, 'boundary_condition_analyst.txt'),
-    (OptimizationAnalystAgent, 'optimization_analyst.txt'),
-    (EmpiricalValidationAnalystAgent, 'empirical_validation_analyst.txt'),
-    (LogicalStructureAnalystAgent, 'logical_structure_analyst.txt'),
+    SystemsAnalystAgent,
+    FirstPrinciplesAnalystAgent,
+    BoundaryConditionAnalystAgent,
+    OptimizationAnalystAgent,
+    EmpiricalValidationAnalystAgent,
+    LogicalStructureAnalystAgent,
 ]
 
 # --- Fixtures ---
@@ -55,7 +53,7 @@ SCIENTIFIC_AGENT_TEST_PARAMS = [
 @pytest.fixture(params=AGENT_TEST_PARAMS)
 def agent_instance(request):
     """Fixture to create an instance of each philosopher agent."""
-    agent_class, _ = request.param
+    agent_class = request.param
     return agent_class()
 
 
@@ -102,57 +100,28 @@ def mock_tree_execution():
 
 def test_agent_initialization(agent_instance):
     """Tests that agents are initialized with the correct style name."""
-    agent_class, _ = next(p for p in AGENT_TEST_PARAMS if isinstance(agent_instance, p[0]))
+    agent_class = next(cls for cls in AGENT_TEST_PARAMS if isinstance(agent_instance, cls))
     assert agent_instance.style == agent_class.__name__.replace("Agent", "")
 
-def test_get_style_directives_loads_file(agent_instance):
-    """Tests that get_style_directives attempts to load the correct file and caches it."""
-    agent_class, filename = next(p for p in AGENT_TEST_PARAMS if isinstance(agent_instance, p[0]))
-    # Adjust expected path based on new structure
-    expected_prompt_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'prompts'))
-    expected_filepath = os.path.join(expected_prompt_dir, filename)
+def test_get_style_directives_returns_prompt(agent_instance):
+    """Agents should expose non-empty prompt directives."""
 
-    # Check if prompt file actually exists before trying to read
-    if not os.path.exists(expected_filepath):
-        pytest.skip(f"Prompt file not found, skipping directive content check: {expected_filepath}")
-
-    # First call - should load from file
     directives1 = agent_instance.get_style_directives()
     assert isinstance(directives1, str)
-    assert len(directives1) > 0 # Basic check that content was loaded
-    assert "ERROR:" not in directives1 # Ensure no load error occurred
+    assert directives1.strip()
 
-    # Second call - should use cache (mock open to verify)
-    with patch('builtins.open', MagicMock()) as mock_open:
-        directives2 = agent_instance.get_style_directives()
-        mock_open.assert_not_called() # Assert file wasn't opened again
-        assert directives1 == directives2 # Ensure cached value is returned
-
-def test_get_style_directives_file_not_found(agent_instance):
-    """Tests error handling when prompt file is missing."""
-    # Temporarily force a non-existent path relative to the new PROMPT_DIR
-    original_path = agent_instance.prompt_filepath
-    new_prompt_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'prompts'))
-    agent_instance.prompt_filepath = os.path.join(new_prompt_dir, "non_existent_prompt.txt")
-    agent_instance._directives_cache = None # Clear cache
-
-    directives = agent_instance.get_style_directives()
-    assert "ERROR: Failed to read prompt file" in directives
-
-    # Restore original path for other tests
-    agent_instance.prompt_filepath = original_path
-    agent_instance._directives_cache = None # Clear cache again
+    directives2 = agent_instance.get_style_directives()
+    assert directives2 == directives1
 
 
-def test_scientific_agents_use_scientific_prompt_directory():
-    """Scientific agents should resolve prompt files within the scientific prompt subtree."""
+def test_scientific_agents_have_prompts():
+    """Scientific agents should expose non-empty prompt directives."""
 
-    for agent_class, filename in SCIENTIFIC_AGENT_TEST_PARAMS:
+    for agent_class in SCIENTIFIC_AGENT_TEST_PARAMS:
         agent = agent_class()
-        expected_suffix = os.path.join('scientific', filename)
-        assert agent.prompt_filepath.endswith(expected_suffix)
-        assert SCIENTIFIC_PROMPT_DIR in agent.prompt_filepath
-        assert agent.style == agent_class.__name__.replace('Agent', '')
+        directives = agent.get_style_directives()
+        assert isinstance(directives, str)
+        assert directives.strip()
 
 
 def test_stub_agent_set_logger_updates_logger(caplog):
@@ -580,37 +549,20 @@ def test_arbitrate_handles_call_failures(monkeypatch):
     assert result['arbiter_overall_score'] is None
 
 
-def test_expert_arbiter_get_style_directives_caches_content(tmp_path):
-    """Arbiter directives should be cached after the first read."""
+def test_expert_arbiter_get_style_directives_returns_prompt():
+    """Arbiter base class should return the provided prompt text."""
 
-    prompt_file = tmp_path / 'arbiter_prompt.txt'
-    prompt_file.write_text('ARB PROMPT', encoding='utf-8')
-
-    arbiter = ExpertArbiterBaseAgent('TestArbiter', str(prompt_file))
+    arbiter = ExpertArbiterBaseAgent('TestArbiter', 'ARB PROMPT')
 
     first_read = arbiter.get_style_directives()
     assert first_read == 'ARB PROMPT'
-
-    prompt_file.unlink()
     assert arbiter.get_style_directives() == 'ARB PROMPT'
 
 
-def test_expert_arbiter_get_style_directives_handles_missing_file(tmp_path, caplog):
-    """Missing arbiter prompts should return an error marker."""
-
-    arbiter = ExpertArbiterBaseAgent('TestArbiter', str(tmp_path / 'missing.txt'))
-
-    with caplog.at_level('ERROR'):
-        directives = arbiter.get_style_directives()
-
-    assert directives.startswith('ERROR:')
-    assert any('Failed to read arbiter prompt file' in message for message in caplog.messages)
-
-
-def test_expert_arbiter_base_methods_raise(tmp_path):
+def test_expert_arbiter_base_methods_raise():
     """Base arbiter agents should not implement critique flows."""
 
-    arbiter = ExpertArbiterBaseAgent('TestArbiter', str(tmp_path / 'prompt.txt'))
+    arbiter = ExpertArbiterBaseAgent('TestArbiter', 'PROMPT TEXT')
 
     with pytest.raises(NotImplementedError):
         arbiter.critique('content', config={})
