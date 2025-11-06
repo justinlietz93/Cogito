@@ -1,0 +1,262 @@
+%% Cogito Domain Model
+%% System: Cogito AI Research Platform
+%% Commit: 0f51527
+%% Last Updated: 2025-11-06
+
+classDiagram
+    %% Core Entities
+    class PipelineInput {
+        +str content
+        +Dict metadata
+        +List~str~ file_sources
+        +str aggregation_strategy
+        +DateTime created_at
+        +is_valid() bool
+        +get_total_length() int
+    }
+    
+    class ExtractedPoint {
+        +str id
+        +str claim
+        +str context
+        +float importance
+        +List~str~ supporting_quotes
+        +Dict metadata
+        +validate() bool
+    }
+    
+    class QueryPlan {
+        +str query_id
+        +str query_text
+        +List~str~ target_sources
+        +Dict parameters
+        +int max_results
+        +DateTime created_at
+        +execute() ResearchResult
+    }
+    
+    class ResearchResult {
+        +str query_id
+        +List~Paper~ papers
+        +List~Citation~ citations
+        +Dict aggregated_metadata
+        +float relevance_score
+        +deduplicate() ResearchResult
+    }
+    
+    %% Research Domain
+    class Paper {
+        +str paper_id
+        +str title
+        +List~str~ authors
+        +str abstract
+        +DateTime published_date
+        +str source
+        +str doi
+        +str url
+        +Dict metadata
+        +get_citation() str
+    }
+    
+    class Citation {
+        +str citation_key
+        +str bibtex_entry
+        +Paper paper
+        +format_apa() str
+        +format_bibtex() str
+    }
+    
+    class VectorEmbedding {
+        +str embedding_id
+        +np.array vector
+        +Paper paper
+        +str chunk_text
+        +int dimension
+        +DateTime created_at
+        +cosine_similarity(other) float
+    }
+    
+    %% Critique Domain
+    class Persona {
+        +str persona_id
+        +str name
+        +str philosophical_tradition
+        +str domain_expertise
+        +Dict reasoning_frameworks
+        +str prompt_template
+        +generate_critique_prompt(content) str
+    }
+    
+    class ReasoningNode {
+        +str node_id
+        +str phase_name
+        +str task_name
+        +str step_name
+        +str reasoning_text
+        +float confidence
+        +List~ReasoningNode~ children
+        +ReasoningNode parent
+        +evaluate() float
+    }
+    
+    class CritiqueResult {
+        +str critique_id
+        +Persona persona
+        +str content_analyzed
+        +ReasoningNode root_reasoning
+        +List~str~ key_findings
+        +float overall_confidence
+        +DateTime created_at
+        +self_critique() CritiqueResult
+    }
+    
+    class CouncilSynthesis {
+        +str synthesis_id
+        +List~CritiqueResult~ individual_critiques
+        +List~str~ common_themes
+        +List~str~ contradictions
+        +Dict confidence_weights
+        +str synthesized_assessment
+        +aggregate() str
+    }
+    
+    class ArbiterReport {
+        +str report_id
+        +CouncilSynthesis synthesis
+        +float methodological_rigor_score
+        +float evidence_quality_score
+        +List~str~ unknown_unknowns
+        +Dict confidence_adjustments
+        +str arbiter_assessment
+        +apply_weighting() Dict
+    }
+    
+    class JudgeVerdict {
+        +str verdict_id
+        +ArbiterReport arbiter_report
+        +CouncilSynthesis council_synthesis
+        +float final_confidence
+        +Tuple~float,float~ confidence_interval
+        +Dict evidence_strength
+        +float unknown_unknowns_penalty
+        +str final_verdict
+        +render() str
+    }
+    
+    %% Thesis Domain
+    class ThesisAgent {
+        +str agent_id
+        +str agent_type
+        +str research_dimension
+        +Dict capabilities
+        +str prompt_template
+        +execute(concept) ThesisSection
+    }
+    
+    class ThesisSection {
+        +str section_id
+        +str title
+        +str content
+        +List~Citation~ citations
+        +ThesisAgent generated_by
+        +Dict metadata
+        +int word_count
+        +validate() bool
+    }
+    
+    class Thesis {
+        +str thesis_id
+        +str title
+        +str concept
+        +str abstract
+        +str introduction
+        +List~ThesisSection~ sections
+        +str conclusion
+        +List~Citation~ bibliography
+        +DateTime created_at
+        +int total_citations
+        +compile_latex() str
+        +export_pdf() bytes
+    }
+    
+    %% Value Objects
+    class Confidence {
+        <<ValueObject>>
+        +float value
+        +str basis
+        +str rationale
+        +validate() bool
+    }
+    
+    class Weighting {
+        <<ValueObject>>
+        +float arbiter_weight
+        +float council_weight
+        +float evidence_weight
+        +float calculate_final() float
+    }
+    
+    %% Aggregates
+    class CritiqueAggregate {
+        <<Aggregate>>
+        +PipelineInput input
+        +List~ExtractedPoint~ extracted_points
+        +QueryPlan query_plan
+        +ResearchResult research_results
+        +List~CritiqueResult~ critiques
+        +CouncilSynthesis synthesis
+        +ArbiterReport arbiter_report
+        +JudgeVerdict judge_verdict
+        +execute_full_pipeline() JudgeVerdict
+    }
+    
+    class ThesisAggregate {
+        <<Aggregate>>
+        +str concept
+        +List~ThesisAgent~ agents
+        +VectorEmbedding concept_embedding
+        +List~ResearchResult~ research_results
+        +List~ThesisSection~ sections
+        +Thesis final_thesis
+        +build_thesis() Thesis
+    }
+    
+    %% Relationships
+    PipelineInput "1" --> "*" ExtractedPoint : extracts
+    ExtractedPoint "1" --> "*" QueryPlan : generates
+    QueryPlan "1" --> "1" ResearchResult : produces
+    ResearchResult "*" --> "*" Paper : contains
+    Paper "1" --> "1" Citation : has
+    Paper "1" --> "*" VectorEmbedding : embedded_as
+    
+    Persona "1" --> "*" CritiqueResult : generates
+    CritiqueResult "1" --> "1" ReasoningNode : has_root
+    ReasoningNode "1" --> "*" ReasoningNode : has_children
+    CritiqueResult "*" --> "1" CouncilSynthesis : synthesized_into
+    CouncilSynthesis "1" --> "1" ArbiterReport : reviewed_by
+    ArbiterReport "1" --> "1" JudgeVerdict : produces
+    
+    ThesisAgent "*" --> "*" ThesisSection : generates
+    ThesisSection "*" --> "*" Citation : references
+    Thesis "1" --> "*" ThesisSection : contains
+    Thesis "1" --> "*" Citation : has_bibliography
+    
+    CritiqueResult "*" --> "*" Confidence : has
+    JudgeVerdict "1" --> "1" Weighting : uses
+    
+    CritiqueAggregate "1" --> "1" PipelineInput : starts_with
+    CritiqueAggregate "1" --> "1" JudgeVerdict : produces
+    
+    ThesisAggregate "1" --> "*" ThesisAgent : coordinates
+    ThesisAggregate "1" --> "1" Thesis : produces
+    
+    %% Styling
+    classDef entityClass fill:#4A90E2,stroke:#2E5C8A,color:#fff
+    classDef valueObjectClass fill:#50C878,stroke:#2E8A4F,color:#fff
+    classDef aggregateClass fill:#E24A4A,stroke:#8A2E2E,color:#fff
+    
+    class PipelineInput,ExtractedPoint,QueryPlan,ResearchResult,Paper,Citation,VectorEmbedding entityClass
+    class Persona,ReasoningNode,CritiqueResult,CouncilSynthesis,ArbiterReport,JudgeVerdict entityClass
+    class ThesisAgent,ThesisSection,Thesis entityClass
+    class Confidence,Weighting valueObjectClass
+    class CritiqueAggregate,ThesisAggregate aggregateClass

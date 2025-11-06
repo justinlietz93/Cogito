@@ -1,0 +1,117 @@
+%% Cogito C4 Components Diagram - Syncretic Catalyst Pipeline
+%% Container: Syncretic Catalyst
+%% Commit: 0f51527
+%% Last Updated: 2025-11-06
+
+graph TB
+    subgraph "Entry Points"
+        ThesisBuilder[Thesis Builder<br/>syncretic_catalyst/thesis_builder.py<br/>Main thesis generation CLI]
+        ResearchEnhancer[Research Enhancer<br/>syncretic_catalyst/research_enhancer.py<br/>Enhancement workflow CLI]
+        OrchestratorCLI[Orchestrator CLI<br/>syncretic_catalyst/presentation/orchestrator_cli.py<br/>Pipeline commands]
+    end
+
+    subgraph "Application Layer - Workflow"
+        Workflow[Workflow Service<br/>application/workflow.py<br/>End-to-end pipeline coordination]
+        Framework[Framework<br/>application/framework.py<br/>Shared application logic]
+    end
+
+    subgraph "Application Layer - Thesis"
+        ThesisService[Thesis Service<br/>application/thesis/services.py<br/>Thesis generation orchestration]
+        ThesisPorts[Thesis Ports<br/>application/thesis/ports.py<br/>Repository interfaces]
+    end
+
+    subgraph "Application Layer - Research Generation"
+        ResearchGenService[Research Generation Service<br/>application/research_generation/services.py<br/>Research content generation]
+        ResearchGenPorts[Research Generation Ports<br/>application/research_generation/ports.py<br/>Repository interfaces]
+    end
+
+    subgraph "Application Layer - Research Enhancement"
+        ResearchEnhService[Research Enhancement Service<br/>application/research_enhancement/services.py<br/>Enhancement orchestration]
+        ResearchEnhPorts[Research Enhancement Ports<br/>application/research_enhancement/ports.py<br/>Repository interfaces]
+    end
+
+    subgraph "Domain Layer"
+        ThesisAgents[Thesis Agents<br/>domain/thesis_agents.py<br/>Research agent definitions]
+        ThesisTypes[Thesis Types<br/>domain/thesis_types.py<br/>Domain entities]
+        ResearchGenerator[Research Generator<br/>research_generator.py<br/>Content generation logic]
+        AssembleResearch[Assemble Research<br/>assemble_research.py<br/>Multi-source aggregation]
+    end
+
+    subgraph "Infrastructure Layer - Thesis"
+        ThesisAIClient[Thesis AI Client<br/>infrastructure/thesis/ai_client.py<br/>LLM provider adapter]
+        ThesisReferenceService[Reference Service<br/>infrastructure/thesis/reference_service.py<br/>Citation management]
+        ThesisOutputRepo[Output Repository<br/>infrastructure/thesis/output_repository.py<br/>Result persistence]
+        ThesisClock[Clock<br/>infrastructure/thesis/clock.py<br/>Time utilities]
+    end
+
+    subgraph "Infrastructure Layer - Research Generation"
+        ResearchGenRepo[Research Generation Repository<br/>infrastructure/research_generation/<br/>Storage adapters]
+    end
+
+    subgraph "Infrastructure Layer - Research Enhancement"
+        ResearchEnhRepo[Research Enhancement Repository<br/>infrastructure/research_enhancement/<br/>Storage adapters]
+    end
+
+    subgraph "Infrastructure Layer - Project"
+        ProjectFileRepo[Project File Repository<br/>infrastructure/project_file_repository.py<br/>File management]
+    end
+
+    subgraph "Cross-Cutting"
+        AIClients[AI Clients<br/>ai_clients.py<br/>Provider abstraction]
+        Orchestrator[Orchestrator<br/>orchestrator.py<br/>General orchestration utilities]
+    end
+
+    %% Entry point flows
+    ThesisBuilder -->|Invokes| Workflow
+    ResearchEnhancer -->|Invokes| Workflow
+    OrchestratorCLI -->|Coordinates| Workflow
+
+    %% Workflow coordination
+    Workflow -->|Generates thesis| ThesisService
+    Workflow -->|Generates research| ResearchGenService
+    Workflow -->|Enhances research| ResearchEnhService
+    Workflow -->|Uses framework| Framework
+
+    %% Thesis service flow
+    ThesisService -->|Defines agents| ThesisAgents
+    ThesisService -->|Uses domain types| ThesisTypes
+    ThesisService -->|Calls LLM| ThesisAIClient
+    ThesisService -->|Manages citations| ThesisReferenceService
+    ThesisService -->|Persists output| ThesisOutputRepo
+    ThesisService -->|Uses ports| ThesisPorts
+
+    %% Research generation flow
+    ResearchGenService -->|Generates content| ResearchGenerator
+    ResearchGenService -->|Assembles results| AssembleResearch
+    ResearchGenService -->|Persists| ResearchGenRepo
+    ResearchGenService -->|Uses ports| ResearchGenPorts
+
+    %% Research enhancement flow
+    ResearchEnhService -->|Enhances content| ResearchGenerator
+    ResearchEnhService -->|Persists| ResearchEnhRepo
+    ResearchEnhService -->|Uses ports| ResearchEnhPorts
+
+    %% Infrastructure interactions
+    ThesisAIClient -->|Abstract providers| AIClients
+    ThesisOutputRepo -->|Writes files| ProjectFileRepo
+    ResearchGenRepo -->|Writes files| ProjectFileRepo
+    ResearchEnhRepo -->|Writes files| ProjectFileRepo
+
+    %% Utilities
+    Framework -->|Uses| Orchestrator
+    ThesisService -->|Timestamps| ThesisClock
+
+    %% Styling
+    classDef entryClass fill:#4A90E2,stroke:#2E5C8A,color:#fff
+    classDef workflowClass fill:#9B59B6,stroke:#5A2E8A,color:#fff
+    classDef applicationClass fill:#50C878,stroke:#2E8A4F,color:#fff
+    classDef domainClass fill:#E24A4A,stroke:#8A2E2E,color:#fff
+    classDef infraClass fill:#95A5A6,stroke:#5A6A6B,color:#fff
+    classDef crossCuttingClass fill:#F39C12,stroke:#8A5A0C,color:#fff
+
+    class ThesisBuilder,ResearchEnhancer,OrchestratorCLI entryClass
+    class Workflow,Framework workflowClass
+    class ThesisService,ThesisPorts,ResearchGenService,ResearchGenPorts,ResearchEnhService,ResearchEnhPorts applicationClass
+    class ThesisAgents,ThesisTypes,ResearchGenerator,AssembleResearch domainClass
+    class ThesisAIClient,ThesisReferenceService,ThesisOutputRepo,ThesisClock,ResearchGenRepo,ResearchEnhRepo,ProjectFileRepo infraClass
+    class AIClients,Orchestrator crossCuttingClass

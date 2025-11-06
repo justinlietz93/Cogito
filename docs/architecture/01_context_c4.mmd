@@ -1,0 +1,88 @@
+%% Cogito C4 Context Diagram
+%% System: Cogito AI Research Platform
+%% Commit: 0f51527
+%% Last Updated: 2025-11-06
+
+graph TB
+    subgraph "External Users"
+        Researcher[Research Scientist<br/>Conducts research and analysis]
+        Reviewer[Academic Reviewer<br/>Reviews scholarly work]
+        Student[Graduate Student<br/>Explores research topics]
+    end
+
+    subgraph "Cogito Platform"
+        Cogito[Cogito AI Research Platform<br/>Multi-agent research and critique system<br/>Python, 26K LOC]
+    end
+
+    subgraph "LLM Providers"
+        OpenAI[OpenAI API<br/>GPT-5, Embeddings]
+        Anthropic[Anthropic API<br/>Claude models]
+        Google[Google Gemini API<br/>Gemini 2.5 Pro]
+        DeepSeek[DeepSeek API<br/>DeepSeek Reasoner]
+    end
+
+    subgraph "Scientific Knowledge"
+        ArXiv[ArXiv API<br/>2M+ scientific papers]
+        PubMed[PubMed API<br/>Biomedical literature]
+        SemanticScholar[Semantic Scholar API<br/>Academic graph database]
+        CrossRef[CrossRef API<br/>Citation metadata]
+    end
+
+    subgraph "Web Search"
+        WebSearch[Web Search APIs<br/>General web knowledge]
+    end
+
+    subgraph "Local Storage"
+        FileSystem[File System<br/>Cache, vectors, documents]
+    end
+
+    %% User interactions
+    Researcher -->|Submits concepts for synthesis| Cogito
+    Researcher -->|Requests research acceleration| Cogito
+    Reviewer -->|Submits documents for critique| Cogito
+    Student -->|Explores research domains| Cogito
+
+    Cogito -->|Generates theses| Researcher
+    Cogito -->|Produces peer reviews| Reviewer
+    Cogito -->|Provides comprehensive analyses| Student
+
+    %% LLM Provider interactions
+    Cogito -->|Sends prompts & receives responses| OpenAI
+    Cogito -->|Sends prompts & receives responses| Anthropic
+    Cogito -->|Sends prompts & receives responses| Google
+    Cogito -->|Sends prompts & receives responses| DeepSeek
+
+    OpenAI -->|Text generation, embeddings| Cogito
+    Anthropic -->|Advanced reasoning| Cogito
+    Google -->|Multi-modal analysis| Cogito
+    DeepSeek -->|Deep reasoning chains| Cogito
+
+    %% Knowledge source interactions
+    Cogito -->|Queries papers by topic/keywords| ArXiv
+    Cogito -->|Searches biomedical literature| PubMed
+    Cogito -->|Retrieves academic graph data| SemanticScholar
+    Cogito -->|Fetches citation metadata| CrossRef
+    Cogito -->|Performs general web search| WebSearch
+
+    ArXiv -->|Returns paper metadata & content| Cogito
+    PubMed -->|Returns medical research| Cogito
+    SemanticScholar -->|Returns citation networks| Cogito
+    CrossRef -->|Returns DOI references| Cogito
+    WebSearch -->|Returns web results| Cogito
+
+    %% Storage interactions
+    Cogito -->|Stores/retrieves cache, vectors| FileSystem
+    FileSystem -->|Provides cached data| Cogito
+
+    %% Styling
+    classDef userClass fill:#4A90E2,stroke:#2E5C8A,color:#fff
+    classDef systemClass fill:#E24A4A,stroke:#8A2E2E,color:#fff
+    classDef llmClass fill:#50C878,stroke:#2E8A4F,color:#fff
+    classDef knowledgeClass fill:#F39C12,stroke:#8A5A0C,color:#fff
+    classDef storageClass fill:#9B59B6,stroke:#5A2E8A,color:#fff
+
+    class Researcher,Reviewer,Student userClass
+    class Cogito systemClass
+    class OpenAI,Anthropic,Google,DeepSeek llmClass
+    class ArXiv,PubMed,SemanticScholar,CrossRef,WebSearch knowledgeClass
+    class FileSystem storageClass

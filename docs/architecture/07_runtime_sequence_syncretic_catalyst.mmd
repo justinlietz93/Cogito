@@ -1,0 +1,208 @@
+%% Syncretic Catalyst - Research Synthesis Sequence Diagram
+%% System: Cogito
+%% Commit: 0f51527
+%% Last Updated: 2025-11-06
+
+sequenceDiagram
+    actor User
+    participant CLI as Thesis Builder CLI
+    participant Workflow as Workflow Service
+    participant ThesisService as Thesis Service
+    participant AgentDef as Thesis Agents (Domain)
+    participant ResearchGen as Research Generator
+    participant ArXiv as ArXiv Integration
+    participant VectorStore as Vector Store
+    participant PubMed as Research APIs (PubMed/etc)
+    participant LLM as LLM Provider
+    participant RefService as Reference Service
+    participant Output as Output Repository
+    participant FS as File System
+
+    User->>CLI: python thesis_builder.py "Quantum computing for climate models"
+    
+    %% Workflow Initialization
+    CLI->>Workflow: build_thesis(concept)
+    Workflow->>Workflow: Load configuration
+    Workflow->>Workflow: Initialize thesis structure
+    
+    %% Agent Definition
+    Workflow->>AgentDef: define_research_agents(concept)
+    AgentDef->>AgentDef: Create specialized agents:
+    Note over AgentDef: 1. Historical Development Agent
+    Note over AgentDef: 2. Modern Research Landscape Agent
+    Note over AgentDef: 3. Methodological Approaches Agent
+    Note over AgentDef: 4. Mathematical Formalization Agent
+    Note over AgentDef: 5. Empirical Evidence Agent
+    Note over AgentDef: 6. Interdisciplinary Connections Agent
+    Note over AgentDef: 7. Implications & Applications Agent
+    AgentDef-->>Workflow: List[ThesisAgent]
+    
+    %% Vector Search Initialization
+    Workflow->>VectorStore: initialize_for_concept(concept)
+    VectorStore->>VectorStore: Generate concept embedding
+    VectorStore->>LLM: create_embedding(concept)
+    LLM-->>VectorStore: Embedding vector
+    VectorStore-->>Workflow: Ready
+    
+    %% Parallel Agent Execution
+    par Historical Development
+        Workflow->>ThesisService: execute_agent(HistoricalAgent)
+        ThesisService->>ResearchGen: generate_research(agent, concept)
+        
+        Note over ResearchGen: Literature Discovery Phase
+        ResearchGen->>VectorStore: semantic_search("historical foundations", k=20)
+        VectorStore->>VectorStore: Cosine similarity search
+        VectorStore-->>ResearchGen: Relevant historical papers
+        
+        ResearchGen->>ArXiv: fetch_papers(paper_ids)
+        ArXiv->>ArXiv: Check cache
+        opt Cache miss
+            ArXiv->>ArXiv: Query ArXiv API
+            ArXiv->>FS: Cache papers
+        end
+        ArXiv-->>ResearchGen: Paper content + metadata
+        
+        Note over ResearchGen: Content Generation Phase
+        ResearchGen->>LLM: generate_section(historical_context, papers)
+        LLM-->>ResearchGen: Historical development text
+        
+        ResearchGen->>RefService: extract_citations(papers)
+        RefService->>RefService: Generate BibTeX entries
+        RefService-->>ResearchGen: Citation refs
+        
+        ResearchGen-->>ThesisService: Section content + citations
+        ThesisService-->>Workflow: Historical section
+        
+    and Modern Research Landscape
+        Workflow->>ThesisService: execute_agent(ModernAgent)
+        ThesisService->>ResearchGen: generate_research(agent, concept)
+        
+        ResearchGen->>VectorStore: semantic_search("recent developments", k=30, date_filter="2020+")
+        VectorStore-->>ResearchGen: Recent papers
+        
+        ResearchGen->>PubMed: search_recent_literature(concept)
+        PubMed-->>ResearchGen: Biomedical papers
+        
+        ResearchGen->>LLM: generate_section(modern_context, papers)
+        LLM-->>ResearchGen: Modern landscape text
+        
+        ResearchGen->>RefService: extract_citations(all_papers)
+        RefService-->>ResearchGen: Citation refs
+        
+        ResearchGen-->>ThesisService: Section content + citations
+        ThesisService-->>Workflow: Modern section
+        
+    and Methodological Approaches
+        Workflow->>ThesisService: execute_agent(MethodologicalAgent)
+        ThesisService->>ResearchGen: generate_research(agent, concept)
+        
+        ResearchGen->>VectorStore: semantic_search("methods validation techniques")
+        VectorStore-->>ResearchGen: Methodology papers
+        
+        ResearchGen->>LLM: generate_section(methods_context, papers)
+        LLM-->>ResearchGen: Methodology text
+        
+        ResearchGen-->>ThesisService: Section content
+        ThesisService-->>Workflow: Methods section
+        
+    and Mathematical Formalization
+        Workflow->>ThesisService: execute_agent(MathematicalAgent)
+        ThesisService->>ResearchGen: generate_research(agent, concept)
+        
+        ResearchGen->>VectorStore: semantic_search("mathematical models formalizations")
+        VectorStore-->>ResearchGen: Mathematical papers
+        
+        ResearchGen->>LLM: generate_section(math_context, papers)
+        LLM-->>ResearchGen: Mathematical formalization
+        
+        ResearchGen-->>ThesisService: Section with math
+        ThesisService-->>Workflow: Math section
+        
+    and Empirical Evidence
+        Workflow->>ThesisService: execute_agent(EmpiricalAgent)
+        ThesisService->>ResearchGen: generate_research(agent, concept)
+        
+        ResearchGen->>VectorStore: semantic_search("empirical studies experiments")
+        VectorStore-->>ResearchGen: Empirical papers
+        
+        ResearchGen->>PubMed: search_empirical_studies(concept)
+        PubMed-->>ResearchGen: Clinical/experimental studies
+        
+        ResearchGen->>LLM: generate_section(empirical_context, papers)
+        LLM-->>ResearchGen: Evidence synthesis
+        
+        ResearchGen-->>ThesisService: Section content
+        ThesisService-->>Workflow: Empirical section
+        
+    and Interdisciplinary Connections
+        Workflow->>ThesisService: execute_agent(InterdisciplinaryAgent)
+        ThesisService->>ResearchGen: generate_research(agent, concept)
+        
+        ResearchGen->>VectorStore: semantic_search("cross-domain applications", expand_domains=true)
+        VectorStore-->>ResearchGen: Cross-domain papers
+        
+        ResearchGen->>LLM: generate_section(interdisciplinary_context, papers)
+        LLM-->>ResearchGen: Connections text
+        
+        ResearchGen-->>ThesisService: Section content
+        ThesisService-->>Workflow: Interdisciplinary section
+        
+    and Implications & Applications
+        Workflow->>ThesisService: execute_agent(ImplicationsAgent)
+        ThesisService->>ResearchGen: generate_research(agent, concept)
+        
+        ResearchGen->>VectorStore: semantic_search("future directions applications")
+        VectorStore-->>ResearchGen: Forward-looking papers
+        
+        ResearchGen->>LLM: generate_section(implications_context, papers)
+        LLM-->>ResearchGen: Implications text
+        
+        ResearchGen-->>ThesisService: Section content
+        ThesisService-->>Workflow: Implications section
+    end
+    
+    %% Synthesis Phase
+    Note over Workflow: All agent results collected
+    Workflow->>Workflow: assemble_thesis_structure(all_sections)
+    Workflow->>Workflow: Generate abstract & introduction
+    Workflow->>LLM: synthesize_abstract(all_sections)
+    LLM-->>Workflow: Abstract text
+    
+    Workflow->>LLM: generate_introduction(concept, sections)
+    LLM-->>Workflow: Introduction text
+    
+    Workflow->>RefService: compile_bibliography(all_citations)
+    RefService->>RefService: Deduplicate citations
+    RefService->>RefService: Format BibTeX
+    RefService-->>Workflow: Complete bibliography
+    
+    %% Gap Analysis
+    Workflow->>Workflow: identify_research_gaps(synthesis)
+    Workflow->>LLM: analyze_gaps(current_coverage)
+    LLM-->>Workflow: Gap analysis
+    
+    %% Final Assembly
+    Workflow->>Workflow: construct_final_thesis()
+    Workflow->>Workflow: Add:
+    Note over Workflow: - Title page
+    Note over Workflow: - Abstract
+    Note over Workflow: - Introduction
+    Note over Workflow: - All research sections
+    Note over Workflow: - Gap analysis
+    Note over Workflow: - Conclusions
+    Note over Workflow: - Bibliography
+    
+    %% LaTeX Generation
+    Workflow->>Output: generate_latex_document(thesis)
+    Output->>Output: Apply academic template
+    Output->>Output: Format citations
+    Output->>Output: Format mathematical expressions
+    Output->>FS: Write .tex files
+    Output->>Output: Compile PDF
+    Output->>FS: Write PDF
+    Output-->>Workflow: Output paths
+    
+    Workflow-->>CLI: Thesis complete
+    CLI-->>User: Display completion & file locations
+    
+    Note over User,FS: Result: Comprehensive academic thesis with 2M+ papers analyzed
