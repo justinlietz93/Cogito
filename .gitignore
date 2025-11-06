@@ -102,3 +102,10 @@ storage/
 storage/arxiv_cache/
 .env
 *.log
+latex_output/*
+
+# VSCode
+.github/instructions
+*.chatmode.md
+memory-bank
+*critique*.md

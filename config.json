@@ -14,10 +14,33 @@
       "base_url": "https://api.deepseek.com/v1"
     },
     "openai": {
-      "model": "gpt-5-mini",
+      "model": "gpt-5",
       "retries": 3,
       "temperature": 0.2,
-      "max_tokens": 8192
+      "max_tokens": 30000
+    }
+  },
+  "preflight": {
+    "provider": "openai",
+    "metadata": {
+      "stage": "preflight"
+    },
+    "extract": {
+      "enabled": false,
+      "max_points": 12,
+      "artifact_path": "artifacts/points.json"
+    },
+    "queries": {
+      "enabled": false,
+      "max_queries": 8,
+      "artifact_path": "artifacts/queries.json"
+    },
+    "api": {
+      "openai": {
+        "model": "gpt-4.1-mini",
+        "temperature": 0.2,
+        "max_tokens": 8192
+      }
     }
   },
   "reasoning_tree": {
@@ -26,5 +49,34 @@
   },
   "council_orchestrator": {
     "synthesis_confidence_threshold": 0.4
+  },
+  "critique": {
+    "directory_input": {
+      "enabled": true,
+      "include": [
+        "**/*.md",
+        "**/*.txt"
+      ],
+      "exclude": [
+        "**/.git/**",
+        "**/node_modules/**"
+      ],
+      "recursive": true,
+      "max_files": 200,
+      "max_chars": 1000000,
+      "section_separator": "\n\n---\n\n",
+      "label_sections": true
+    },
+    "directory_input_overrides": {
+      "syncretic_catalyst": {
+        "order": [
+          "PROJECT_OVERVIEW.md",
+          "RESEARCH_CONTEXT.md",
+          "NEXT_STEPS.md"
+        ],
+        "label_sections": false,
+        "section_separator": "\n\n---\n\n"
+      }
+    }
   }
 }

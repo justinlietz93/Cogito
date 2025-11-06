@@ -43,6 +43,18 @@ def test_derive_base_name_falls_back_to_label() -> None:
     assert utils.derive_base_name(pipeline_input) == "Example_Title"
 
 
+def test_derive_base_name_handles_directory_source() -> None:
+    pipeline_input = PipelineInput(content="body", source="/tmp/my_project")
+
+    assert utils.derive_base_name(pipeline_input) == "my_project"
+
+
+def test_derive_base_name_strips_critique_suffix() -> None:
+    pipeline_input = PipelineInput(content="body", source="./analysis_critique.md")
+
+    assert utils.derive_base_name(pipeline_input) == "analysis"
+
+
 def test_mask_key_handles_short_and_long_values() -> None:
     assert utils.mask_key("abc") == "***"
     assert utils.mask_key("abcdefghi") == "abc***hi"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,8 +11,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.application.critique.exceptions import ConfigurationError, MissingApiKeyError
+from src.application.preflight.orchestrator import PreflightOptions, PreflightRunResult
 from src.application.user_settings.services import SettingsPersistenceError
-from src.pipeline_input import PipelineInput
+from src.domain.preflight import ExtractionResult, QueryPlan
+from src.pipeline_input import EmptyPipelineInputError, PipelineInput
+from src.presentation.cli.app import DirectoryInputDefaults
+from src.presentation.cli.preflight import PreflightCliDefaults
 
 from .helpers import FakeSettings, FakeSettingsService, make_app
 
@@ -34,7 +39,7 @@ def test_run_requires_input_file() -> None:
 
     app.run(args, interactive=False)
 
-    assert "No input file provided" in messages[0]
+    assert "No input selected" in messages[0]
     runner.run.assert_not_called()
 
 
@@ -50,6 +55,7 @@ def test_run_executes_full_flow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         peer_review_enabled=True,
         scientific_mode_enabled=True,
         module_config={"level": "high"},
+        pipeline_input=pipeline_input,
     )
     runner.run.return_value = result
     app, messages, service, runner, _prompts = make_app(
@@ -92,11 +98,174 @@ def test_run_executes_full_flow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 
     assert critique_path.read_text(encoding="utf-8") == "critique"
     assert peer_path.read_text(encoding="utf-8") == "scientific"
-    assert any("Input file not found; treating value as literal text." in msg for msg in messages)
     assert any("LaTeX document saved" in msg for msg in messages)
     assert any("PDF document saved" in msg for msg in messages)
     assert ("set_default_output_dir", str(tmp_path)) in service.actions
 
+
+def test_run_falls_back_to_literal_when_file_missing() -> None:
+    app, messages, _service, runner, _prompts = make_app()
+    literal_result = SimpleNamespace(
+        critique_report="report",
+        peer_review_enabled=False,
+        scientific_mode_enabled=False,
+        module_config={},
+        pipeline_input=PipelineInput(content="missing.txt"),
+    )
+    runner.run.return_value = literal_result
+
+    args = SimpleNamespace(
+        input_file="missing.txt",
+        input_dir=None,
+        output_dir=None,
+        peer_review=None,
+        scientific_mode=None,
+        latex=False,
+        latex_compile=False,
+        latex_output_dir=None,
+        latex_scientific_level="high",
+        direct_latex=False,
+        remember_output=False,
+    )
+
+    app.run(args, interactive=False)
+
+    assert any("Input file not found; treating value as literal text." in msg for msg in messages)
+    invoked_descriptor = runner.run.call_args.args[0]
+    assert invoked_descriptor.text == "missing.txt"
+
+
+def test_directory_request_uses_configuration_defaults(tmp_path: Path) -> None:
+    """Ensure CLI directory requests inherit defaults from configuration.
+
+    Args:
+        tmp_path: Pytest-provided temporary directory used to simulate roots.
+
+    Returns:
+        None.
+
+    Raises:
+        AssertionError: If resolved request values differ from the configured defaults.
+
+    Side Effects:
+        None. The test only instantiates DTOs.
+
+    Timeout:
+        Not applicable.
+    """
+
+    defaults = DirectoryInputDefaults(
+        include=("**/*.rst",),
+        exclude=("**/skip/**",),
+        recursive=False,
+        max_files=5,
+        max_chars=2500,
+        section_separator="\n==\n",
+        label_sections=False,
+        enabled=True,
+        order=("introduction.md", "summary.md"),
+    )
+    app, _messages, _service, _runner, _prompts = make_app(directory_defaults=defaults)
+
+    args = SimpleNamespace(
+        input_file=None,
+        input_dir=str(tmp_path),
+        include=None,
+        exclude=None,
+        order=None,
+        order_from=None,
+        recursive=None,
+        label_sections=None,
+        max_files=None,
+        max_chars=None,
+        section_separator=None,
+    )
+
+    descriptor, warning = app._build_cli_input(args)
+
+    assert warning is None
+    assert descriptor is not None
+    assert descriptor.include == defaults.include
+    assert descriptor.exclude == defaults.exclude
+    assert descriptor.recursive is defaults.recursive
+    assert descriptor.max_files == defaults.max_files
+    assert descriptor.max_chars == defaults.max_chars
+    assert descriptor.section_separator == defaults.section_separator
+    assert descriptor.label_sections is defaults.label_sections
+    assert descriptor.order == defaults.order
+
+
+
+def test_directory_input_disabled_emits_warning(caplog: pytest.LogCaptureFixture) -> None:
+    """Verify disabling directory ingestion surfaces a user-friendly message.
+
+    Args:
+        caplog: Pytest fixture capturing log output for assertions.
+
+    Returns:
+        None.
+
+    Raises:
+        AssertionError: If the CLI proceeds despite directory ingestion being disabled.
+
+    Side Effects:
+        Writes to the captured logging fixture and appends to the fake message list.
+
+    Timeout:
+        Not applicable.
+    """
+
+    defaults = DirectoryInputDefaults(enabled=False)
+    app, messages, _service, runner, _prompts = make_app(directory_defaults=defaults)
+    runner.run.side_effect = AssertionError("Runner should not be invoked")
+
+    args = SimpleNamespace(
+        input_file=None,
+        input_dir="/tmp/docs",
+        include=None,
+        exclude=None,
+        order=None,
+        order_from=None,
+        recursive=None,
+        label_sections=None,
+        max_files=None,
+        max_chars=None,
+        section_separator=None,
+        output_dir=None,
+        peer_review=None,
+        scientific_mode=None,
+        latex=False,
+        latex_compile=False,
+        latex_output_dir=None,
+        latex_scientific_level="high",
+        direct_latex=False,
+        remember_output=False,
+    )
+
+    with caplog.at_level("WARNING"):
+        app.run(args, interactive=False)
+
+    assert any("Directory input has been disabled" in msg for msg in messages)
+    assert "disabled via configuration" in caplog.text
+    runner.run.assert_not_called()
+
+
+def test_execute_run_reports_pipeline_input_errors(tmp_path: Path) -> None:
+    """Surface pipeline input errors with a user-friendly message."""
+
+    app, messages, _service, runner, _prompts = make_app()
+    runner.run.side_effect = EmptyPipelineInputError('empty')
+
+    app._execute_run(
+        PipelineInput(content='data'),
+        tmp_path,
+        peer_review=None,
+        scientific_mode=None,
+        latex_args=None,
+        remember_output=False,
+    )
+
+    assert messages[-1] == 'Failed to load input: empty'
 
 @pytest.mark.parametrize(
     "raised, expected",
@@ -105,6 +274,7 @@ def test_run_executes_full_flow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         (ConfigurationError("config"), "Configuration error: config"),
     ],
 )
+
 def test_execute_run_handles_known_errors(
     raised: Exception, expected: str, tmp_path: Path
 ) -> None:
@@ -148,12 +318,7 @@ def test_execute_run_handles_unexpected_exception(
 def test_execute_run_handles_missing_path(tmp_path: Path) -> None:
     missing_path = tmp_path / "missing.txt"
     app, messages, _service, runner, _prompts = make_app()
-    runner.run.return_value = SimpleNamespace(
-        critique_report="report",
-        peer_review_enabled=False,
-        scientific_mode_enabled=False,
-        module_config={},
-    )
+    runner.run.side_effect = FileNotFoundError("missing.txt")
 
     app._execute_run(
         missing_path,
@@ -174,6 +339,7 @@ def test_execute_run_handles_mapping_input(tmp_path: Path) -> None:
         peer_review_enabled=False,
         scientific_mode_enabled=False,
         module_config={},
+        pipeline_input=PipelineInput(content="value", source="paper.md", metadata={"meta": "x"}),
     )
 
     payload = {"content": "value", "source": "paper.md", "meta": "x"}
@@ -201,6 +367,7 @@ def test_execute_run_handles_output_dir_failure(
         peer_review_enabled=False,
         scientific_mode_enabled=False,
         module_config={},
+        pipeline_input=PipelineInput(content="body"),
     )
 
     def failing_mkdir(self: Path, *args, **kwargs) -> None:
@@ -229,6 +396,7 @@ def test_execute_run_handles_settings_persistence_error(tmp_path: Path) -> None:
         peer_review_enabled=False,
         scientific_mode_enabled=False,
         module_config={},
+        pipeline_input=PipelineInput(content="body"),
     )
     app, messages, _service, _runner, _prompts = make_app(
         settings_service=service,
@@ -245,3 +413,149 @@ def test_execute_run_handles_settings_persistence_error(tmp_path: Path) -> None:
     )
 
     assert any("Failed to remember output directory" in msg for msg in messages)
+
+
+def test_execute_run_passes_preflight_options(tmp_path: Path) -> None:
+    defaults = PreflightCliDefaults(
+        extract_enabled=False,
+        query_enabled=False,
+        max_points=7,
+        max_queries=5,
+        points_artifact="artifacts/points.json",
+        queries_artifact="artifacts/queries.json",
+    )
+    pipeline_input = PipelineInput(content="body")
+    runner = MagicMock()
+    runner.run.return_value = SimpleNamespace(
+        critique_report="report",
+        peer_review_enabled=False,
+        scientific_mode_enabled=False,
+        module_config={},
+        pipeline_input=pipeline_input,
+        preflight=None,
+    )
+    app, _messages, _service, runner, _prompts = make_app(
+        critique_runner=runner,
+        preflight_defaults=defaults,
+    )
+
+    args = SimpleNamespace(
+        input_file=pipeline_input,
+        output_dir=str(tmp_path),
+        peer_review=None,
+        scientific_mode=None,
+        latex=False,
+        latex_compile=False,
+        latex_output_dir=None,
+        latex_scientific_level="high",
+        direct_latex=False,
+        remember_output=False,
+        preflight_extract=True,
+        preflight_build_queries=True,
+        points_out="custom_points.json",
+        queries_out="custom_queries.json",
+        max_points=3,
+        max_queries=2,
+    )
+
+    app.run(args, interactive=False)
+
+    assert runner.run.call_count == 1
+    options: PreflightOptions = runner.run.call_args.kwargs["preflight_options"]
+    assert isinstance(options, PreflightOptions)
+    assert options.enable_extraction is True
+    assert options.enable_query_building is True
+    assert options.max_points == 3
+    assert options.max_queries == 2
+    assert options.extraction_artifact_name == "custom_points.json"
+    assert options.query_artifact_name == "custom_queries.json"
+
+
+def test_execute_run_persists_preflight_artifacts(tmp_path: Path) -> None:
+    defaults = PreflightCliDefaults(
+        extract_enabled=True,
+        query_enabled=True,
+        points_artifact="artifacts/points.json",
+        queries_artifact="artifacts/queries.json",
+    )
+    pipeline_input = PipelineInput(content="body", metadata={})
+    preflight_result = PreflightRunResult(
+        extraction=ExtractionResult(),
+        query_plan=QueryPlan(),
+        artifact_paths={"extraction": "points.json", "query_plan": "queries.json"},
+    )
+    runner = MagicMock()
+    runner.run.return_value = SimpleNamespace(
+        critique_report="report",
+        peer_review_enabled=False,
+        scientific_mode_enabled=False,
+        module_config={},
+        pipeline_input=pipeline_input,
+        preflight=preflight_result,
+    )
+    app, messages, _service, runner, _prompts = make_app(
+        critique_runner=runner,
+        preflight_defaults=defaults,
+    )
+
+    args = SimpleNamespace(
+        input_file=pipeline_input,
+        output_dir=str(tmp_path),
+        peer_review=None,
+        scientific_mode=None,
+        latex=False,
+        latex_compile=False,
+        latex_output_dir=None,
+        latex_scientific_level="high",
+        direct_latex=False,
+        remember_output=False,
+        preflight_extract=True,
+        preflight_build_queries=True,
+        points_out=None,
+        queries_out=None,
+        max_points=None,
+        max_queries=None,
+    )
+
+    app.run(args, interactive=False)
+
+    extraction_path = tmp_path / "points.json"
+    query_path = tmp_path / "queries.json"
+    assert extraction_path.exists()
+    assert query_path.exists()
+
+    extraction_payload = json.loads(extraction_path.read_text(encoding="utf-8"))
+    query_payload = json.loads(query_path.read_text(encoding="utf-8"))
+    assert extraction_payload["points"] == []
+    assert query_payload["queries"] == []
+    assert any("Preflight points saved" in msg for msg in messages)
+    assert any("Preflight queries saved" in msg for msg in messages)
+    metadata = pipeline_input.metadata["preflight_artifacts"]
+    assert metadata["extraction"] == str(extraction_path)
+    assert metadata["query_plan"] == str(query_path)
+
+def test_directory_request_uses_default_order_file(tmp_path: Path) -> None:
+    """Ensure CLI directory requests fall back to configured order files."""
+
+    defaults = DirectoryInputDefaults(order=(), order_file="order.txt")
+    app, _messages, _service, _runner, _prompts = make_app(directory_defaults=defaults)
+
+    args = SimpleNamespace(
+        input_file=None,
+        input_dir=str(tmp_path),
+        include=None,
+        exclude=None,
+        order=None,
+        order_from=None,
+        recursive=None,
+        label_sections=None,
+        max_files=None,
+        max_chars=None,
+        section_separator=None,
+    )
+
+    descriptor, warning = app._build_cli_input(args)
+
+    assert warning is None
+    assert descriptor.order is None
+    assert descriptor.order_file == Path(defaults.order_file).expanduser()

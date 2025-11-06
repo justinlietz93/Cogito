@@ -9,6 +9,7 @@ from typing import List
 import pytest
 from unittest.mock import MagicMock
 
+from src.application.critique.requests import FileInputRequest
 from src.presentation.cli.app import CliApp
 
 from .helpers import FakeSettings, FakeSettingsService, make_app, make_input
@@ -18,10 +19,10 @@ def test_run_interactive_routes_to_handlers(monkeypatch: pytest.MonkeyPatch) -> 
     inputs = ["1", "2", "3", "4", "q"]
     app, messages, _service, _runner, _prompts = make_app(input_values=inputs)
     called: List[str] = []
-    monkeypatch.setattr(app, "_interactive_run_flow", lambda: called.append("run"))
-    monkeypatch.setattr(app, "_preferences_menu", lambda: called.append("prefs"))
-    monkeypatch.setattr(app, "_api_keys_menu", lambda: called.append("keys"))
-    monkeypatch.setattr(app, "_display_settings", lambda: called.append("display"))
+    monkeypatch.setattr(app._interactive, "_interactive_run_flow", lambda: called.append("run"))
+    monkeypatch.setattr(app._interactive, "_preferences_menu", lambda: called.append("prefs"))
+    monkeypatch.setattr(app._interactive, "_api_keys_menu", lambda: called.append("keys"))
+    monkeypatch.setattr(app._interactive, "_display_settings", lambda: called.append("display"))
 
     app._run_interactive()
 
@@ -34,15 +35,15 @@ def test_interactive_run_flow_uses_prompts(monkeypatch: pytest.MonkeyPatch, tmp_
     app = CliApp(service, MagicMock(), input_func=lambda _: "", output_func=lambda _: None)
 
     input_path = tmp_path / "input.md"
-    monkeypatch.setattr(app, "_prompt_for_input_path", lambda _settings: input_path)
-    monkeypatch.setattr(app, "_prompt_for_output_directory", lambda _settings: tmp_path)
-    monkeypatch.setattr(app, "_prompt_bool", lambda message, default: True)
+    monkeypatch.setattr(app._interactive, "_prompt_for_input_path", lambda _settings: input_path)
+    monkeypatch.setattr(app._interactive, "_prompt_for_output_directory", lambda _settings: tmp_path)
+    monkeypatch.setattr(app._interactive, "_prompt_bool", lambda message, default: True)
     latex_args = SimpleNamespace(latex=True)
-    monkeypatch.setattr(app, "_prompt_latex_options", lambda _output_dir: latex_args)
+    monkeypatch.setattr(app._interactive, "_prompt_latex_options", lambda _output_dir: latex_args)
     calls: List[tuple[tuple[object, ...], dict[str, object]]] = []
     monkeypatch.setattr(
-        app,
-        "_execute_run",
+        app._interactive,
+        "execute_run",
         lambda *args, **kwargs: calls.append((args, kwargs)),
     )
 
@@ -50,7 +51,8 @@ def test_interactive_run_flow_uses_prompts(monkeypatch: pytest.MonkeyPatch, tmp_
 
     assert calls
     args, kwargs = calls[0]
-    assert args[0] == input_path
+    assert isinstance(args[0], FileInputRequest)
+    assert args[0].path == input_path
     assert kwargs["latex_args"] is latex_args
 
 

@@ -4,7 +4,7 @@
 
 import os
 import sys
-from typing import Dict
+from typing import Any, Dict, List, Optional
 from unittest.mock import patch
 
 import pytest
@@ -21,9 +21,9 @@ STYLE_DIRECTIVES = "Unit test style directives"
 def stub_call_with_retry(monkeypatch):
     """Provide deterministic responses for the provider interactions."""
 
-    def _fake_call(prompt_template, context, config, is_structured=False):
+    def _fake_call(prompt_template, context, config, is_structured=False, structured_output_schema=None):
         if "Based on the primary critique claim" in prompt_template:
-            return (["Topic A", "Topic B"], "stub-model")
+            return ({"topics": ["Topic A", "Topic B"]}, "stub-model")
         return (
             {
                 "claim": "Stub claim",
@@ -145,7 +145,7 @@ def test_tree_distributes_assigned_points(base_config, monkeypatch):
 
     assessment_contexts = []
 
-    def _call_with_retry(prompt_template, context, config, is_structured=False):
+    def _call_with_retry(prompt_template, context, config, is_structured=False, structured_output_schema=None):
         if 'Based on the primary critique claim' in prompt_template:
             _call_with_retry.decomposition_calls += 1
             if _call_with_retry.decomposition_calls == 1:
@@ -197,7 +197,7 @@ def test_tree_distributes_assigned_points(base_config, monkeypatch):
 def test_tree_handles_assessment_provider_error(base_config, monkeypatch):
     """Provider-layer failures should yield a pruned branch."""
 
-    def _failing_call(prompt_template, context, config, is_structured=False):
+    def _failing_call(prompt_template, context, config, is_structured=False, structured_output_schema=None):
         raise JsonParsingError('bad json payload')
 
     monkeypatch.setattr('src.reasoning_tree.call_with_retry', _failing_call)
@@ -210,7 +210,7 @@ def test_tree_handles_assessment_provider_error(base_config, monkeypatch):
 def test_tree_handles_unexpected_assessment_error(base_config, monkeypatch):
     """Unexpected provider errors should also prune the branch."""
 
-    def _unexpected_call(prompt_template, context, config, is_structured=False):
+    def _unexpected_call(prompt_template, context, config, is_structured=False, structured_output_schema=None):
         if 'Based on the primary critique claim' in prompt_template:
             return [], 'stub-model'
         raise RuntimeError('unexpected failure')
@@ -225,7 +225,7 @@ def test_tree_handles_unexpected_assessment_error(base_config, monkeypatch):
 def test_tree_handles_decomposition_provider_error(base_config, monkeypatch):
     """Failures during decomposition should be logged and still return a node."""
 
-    def _call_with_retry(prompt_template, context, config, is_structured=False):
+    def _call_with_retry(prompt_template, context, config, is_structured=False, structured_output_schema=None):
         if 'Based on the primary critique claim' in prompt_template:
             raise JsonProcessingError('bad decomposition payload')
         return (
@@ -251,7 +251,7 @@ def test_tree_handles_decomposition_provider_error(base_config, monkeypatch):
 def test_tree_handles_unexpected_decomposition_error(base_config, monkeypatch, caplog):
     """Unexpected decomposition exceptions should be logged and allow execution to continue."""
 
-    def _call_with_retry(prompt_template, context, config, is_structured=False):
+    def _call_with_retry(prompt_template, context, config, is_structured=False, structured_output_schema=None):
         if 'Based on the primary critique claim' in prompt_template:
             raise RuntimeError('decomposition failed')
         return (
@@ -276,10 +276,64 @@ def test_tree_handles_unexpected_decomposition_error(base_config, monkeypatch, c
     assert any('Unexpected error during decomposition' in message for message in caplog.messages)
 
 
+def test_tree_accepts_list_based_decomposition(base_config, monkeypatch, caplog):
+    """Lists of strings from the decomposition provider should remain supported."""
+
+    def _call_with_retry(prompt_template, context, config, is_structured=False, structured_output_schema=None):
+        if 'Based on the primary critique claim' in prompt_template:
+            return (["Topic 1", "Topic 2"], 'stub-model')
+        return (
+            {
+                'claim': 'Primary finding',
+                'evidence': 'Detailed evidence',
+                'confidence': 0.9,
+                'severity': 'high',
+                'recommendation': 'Action',
+                'concession': 'None',
+            },
+            'assessment-model',
+        )
+
+    monkeypatch.setattr('src.reasoning_tree.call_with_retry', _call_with_retry)
+
+    with caplog.at_level('INFO', logger='src.reasoning_tree'):
+        result = execute_reasoning_tree('Extensive content segment.' * 5, STYLE_DIRECTIVES, 'TestAgent', base_config)
+
+    assert result is not None
+    assert any('Identified 2 sub-topics for recursion.' in message for message in caplog.messages)
+
+
+def test_tree_accepts_alternative_topic_keys(base_config, monkeypatch, caplog):
+    """Mappings with "items" or "subtopics" keys should normalise correctly."""
+
+    def _call_with_retry(prompt_template, context, config, is_structured=False, structured_output_schema=None):
+        if 'Based on the primary critique claim' in prompt_template:
+            return ({'items': ['Topic 1']}, 'stub-model')
+        return (
+            {
+                'claim': 'Primary finding',
+                'evidence': 'Detailed evidence',
+                'confidence': 0.9,
+                'severity': 'high',
+                'recommendation': 'Action',
+                'concession': 'None',
+            },
+            'assessment-model',
+        )
+
+    monkeypatch.setattr('src.reasoning_tree.call_with_retry', _call_with_retry)
+
+    with caplog.at_level('INFO', logger='src.reasoning_tree'):
+        result = execute_reasoning_tree('Extensive content segment.' * 5, STYLE_DIRECTIVES, 'TestAgent', base_config)
+
+    assert result is not None
+    assert any('Identified 1 sub-topics for recursion.' in message for message in caplog.messages)
+
+
 def test_tree_warns_on_invalid_decomposition_structure(base_config, caplog, monkeypatch):
     """Unexpected decomposition results should trigger a warning."""
 
-    def _call_with_retry(prompt_template, context, config, is_structured=False):
+    def _call_with_retry(prompt_template, context, config, is_structured=False, structured_output_schema=None):
         if 'Based on the primary critique claim' in prompt_template:
             return {'invalid': 'structure'}, 'stub-model'
         return (
@@ -300,7 +354,97 @@ def test_tree_warns_on_invalid_decomposition_structure(base_config, caplog, monk
         result = execute_reasoning_tree('Extensive content segment.' * 5, STYLE_DIRECTIVES, 'TestAgent', base_config)
 
     assert result is not None
-    assert any('Unexpected decomposition structure' in message for message in caplog.messages)
+    warnings = [message for message in caplog.messages if 'Unexpected decomposition structure' in message]
+    assert len(warnings) == 1
+    assert 'provider=' in warnings[0]
+    assert 'keys=invalid' in warnings[0]
+
+
+def test_o_series_requests_json_schema(base_config, monkeypatch):
+    """o-series models should request a JSON schema for decomposition topics."""
+
+    captured_schema: Dict[str, Any] = {}
+
+    def _call_with_retry(prompt_template, context, config, is_structured=False, structured_output_schema=None):
+        if 'Based on the primary critique claim' in prompt_template:
+            captured_schema['value'] = structured_output_schema
+            return (['Topic 1'], 'o1-mini')
+        return (
+            {
+                'claim': 'Primary finding',
+                'evidence': 'Detailed evidence',
+                'confidence': 0.9,
+                'severity': 'high',
+                'recommendation': 'Action',
+                'concession': 'None',
+            },
+            'assessment-model',
+        )
+
+    config = {
+        **base_config,
+        'api': {
+            'primary_provider': 'openai',
+            'openai': {'model': 'o1-mini'},
+        },
+    }
+
+    monkeypatch.setattr('src.reasoning_tree.call_with_retry', _call_with_retry)
+
+    result = execute_reasoning_tree('Extensive content segment.' * 5, STYLE_DIRECTIVES, 'TestAgent', config)
+
+    assert result is not None
+    assert 'value' in captured_schema
+    schema = captured_schema['value']
+    assert schema is not None
+    assert schema.get('schema', {}).get('type') == 'array'
+    assert schema.get('schema', {}).get('items', {}).get('type') == 'string'
+
+
+def test_decomposition_recurses_without_repeated_warnings(base_config, monkeypatch, caplog):
+    """gpt-5 executions should recurse cleanly without duplicate warnings."""
+
+    config = {
+        **base_config,
+        'api': {
+            'primary_provider': 'openai',
+            'openai': {'model': 'gpt-5'},
+        },
+    }
+
+    decomposition_calls = 0
+    observed_schemas: List[Optional[Dict[str, Any]]] = []
+
+    def _call_with_retry(prompt_template, context, config, is_structured=False, structured_output_schema=None):
+        nonlocal decomposition_calls
+        if 'Based on the primary critique claim' in prompt_template:
+            decomposition_calls += 1
+            observed_schemas.append(structured_output_schema)
+            if decomposition_calls == 1:
+                return ({'topics': ['Topic 1', 'Topic 2']}, 'gpt-5')
+            return ({'topics': []}, 'gpt-5')
+        return (
+            {
+                'claim': 'Primary finding',
+                'evidence': 'Detailed evidence',
+                'confidence': 0.9,
+                'severity': 'high',
+                'recommendation': 'Action',
+                'concession': 'None',
+            },
+            'assessment-model',
+        )
+
+    monkeypatch.setattr('src.reasoning_tree.call_with_retry', _call_with_retry)
+
+    with caplog.at_level('INFO', logger='src.reasoning_tree'):
+        result = execute_reasoning_tree('Extensive content segment.' * 5, STYLE_DIRECTIVES, 'TestAgent', config)
+
+    assert result is not None
+    assert len(result['sub_critiques']) == 2
+    assert all(schema is None for schema in observed_schemas)
+    warnings = [message for message in caplog.messages if 'Unexpected decomposition structure' in message]
+    assert len(warnings) <= 1
 
 
 def test_run_example_executes_without_error(caplog):

@@ -1,4 +1,18 @@
-"""Interactive CLI application for the Cogito critique pipeline."""
+"""Presentation-layer orchestration for the Cogito CLI.
+
+Purpose:
+    Translate parsed command-line arguments into application-layer requests,
+    apply configuration defaults, and coordinate critique executions through the
+    injected services while maintaining clean-architecture boundaries.
+External Dependencies:
+    Python standard library modules ``argparse``, ``logging``, and ``datetime``.
+Fallback Semantics:
+    CLI handlers fall back to configuration defaults and provide human-readable
+    error messages. No implicit retries are performed at this layer.
+Timeout Strategy:
+    Not applicable. The CLI delegates long-running operations to injected
+    services which should apply timeout management if required.
+"""
 
 from __future__ import annotations
 
@@ -6,26 +20,50 @@ import argparse
 import logging
 from datetime import datetime
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any, Callable, Mapping, Optional, Union
+from typing import Any, Callable, Mapping, Optional, Sequence, Union
 
 from ...application.critique.exceptions import ConfigurationError, MissingApiKeyError
+from ...application.critique.requests import (
+    DirectoryInputRequest,
+    FileInputRequest,
+    LiteralTextInputRequest,
+)
 from ...application.critique.services import CritiqueRunner
+from ...application.preflight.orchestrator import PreflightOptions
 from ...application.user_settings.services import (
-    InvalidPreferenceError,
     SettingsPersistenceError,
     UserSettingsService,
 )
-from ...input_reader import read_file_content
+from ...latex.cli import handle_latex_output
 from ...pipeline_input import (
     EmptyPipelineInputError,
     InvalidPipelineInputError,
     PipelineInput,
+    PipelineInputError,
     ensure_pipeline_input,
 )
 from ...scientific_review_formatter import format_scientific_peer_review
-from ...latex.cli import handle_latex_output
-from .utils import derive_base_name, extract_latex_args, mask_key
+from .directory_defaults import DirectoryInputDefaults
+from .interactive import InteractiveCli
+from .preflight import (
+    PreflightCliDefaults,
+    PreflightCliOverrides,
+    build_preflight_options,
+    update_preflight_metadata,
+)
+from .utils import derive_base_name, extract_latex_args
+
+InputArgument = Union[
+    PipelineInput,
+    DirectoryInputRequest,
+    FileInputRequest,
+    LiteralTextInputRequest,
+    Path,
+    Mapping[str, Any],
+    str,
+]
+
+__all__ = ["CliApp", "DirectoryInputDefaults"]
 
 
 class CliApp:
@@ -36,6 +74,8 @@ class CliApp:
         settings_service: UserSettingsService,
         critique_runner: CritiqueRunner,
         *,
+        directory_defaults: DirectoryInputDefaults | None = None,
+        preflight_defaults: PreflightCliDefaults | None = None,
         input_func: Callable[[str], str] = input,
         output_func: Callable[[str], None] = print,
     ) -> None:
@@ -44,147 +84,332 @@ class CliApp:
         self._input = input_func
         self._output = output_func
         self._logger = logging.getLogger(__name__)
+        self._directory_defaults = directory_defaults or DirectoryInputDefaults()
+        self._preflight_defaults = preflight_defaults
+        self._interactive = InteractiveCli(
+            settings_service=self._settings_service,
+            execute_run=self._execute_run,
+            input_func=self._input,
+            output_func=self._output,
+        )
+
+    @property
+    def directory_defaults(self) -> DirectoryInputDefaults:
+        """Return the directory input defaults configured for the CLI app."""
+
+        return self._directory_defaults
 
     # Public entry points --------------------------------------------------
     def run(self, args: argparse.Namespace, interactive: bool) -> None:
+        """Execute CLI workflows based on parsed arguments."""
+
         if interactive:
-            self._run_interactive()
-        else:
-            if getattr(args, "input_file", None) is None:
-                self._output("No input file provided. Use --interactive for guided navigation.")
-                return
-            latex_args = extract_latex_args(args)
-            input_payload: Any = args.input_file
-            output_dir = (
-                args.output_dir
-                or self._settings_service.get_settings().default_output_dir
-                or "critiques"
-            )
-            self._execute_run(
-                input_payload,
-                output_dir,
-                peer_review=args.peer_review,
-                scientific_mode=args.scientific_mode,
-                latex_args=latex_args,
-                remember_output=args.remember_output,
-            )
-
-    # Interactive navigation ----------------------------------------------
-    def _run_interactive(self) -> None:
-        self._output("\nWelcome to the Cogito Critique CLI")
-        self._output("Navigate using the menu numbers or shortcuts in brackets.")
-
-        while True:
-            self._output("\nMain Menu")
-            self._output("  [1] Run critique")
-            self._output("  [2] Manage preferences")
-            self._output("  [3] Manage API keys")
-            self._output("  [4] View current settings")
-            self._output("  [q] Quit")
-            choice = self._input("Select an option: ").strip().lower()
-
-            if choice in {"1", "run", "r"}:
-                self._interactive_run_flow()
-            elif choice in {"2", "prefs", "p"}:
-                self._preferences_menu()
-            elif choice in {"3", "keys", "k"}:
-                self._api_keys_menu()
-            elif choice in {"4", "view", "v"}:
-                self._display_settings()
-            elif choice in {"q", "quit", "exit"}:
-                self._output("Goodbye!")
-                return
-            else:
-                self._output("Unrecognised option. Please select a valid menu item.")
-
-    def _interactive_run_flow(self) -> None:
-        settings = self._settings_service.get_settings()
-        input_path = self._prompt_for_input_path(settings)
-        if not input_path:
+            self._interactive.run()
             return
 
-        output_directory = self._prompt_for_output_directory(settings)
-        peer_review = self._prompt_bool("Enable peer review", settings.peer_review_default)
-        scientific_mode = self._prompt_bool("Use scientific methodology", settings.scientific_mode_default)
-        latex_args = self._prompt_latex_options(output_directory)
+        descriptor, fallback_message = self._build_cli_input(args)
+        if descriptor is None:
+            if fallback_message:
+                self._output(fallback_message)
+            else:
+                self._output("No input selected. Use --interactive for guided navigation.")
+            return
 
-        self._execute_run(
-            input_path,
-            output_directory,
-            peer_review=peer_review,
-            scientific_mode=scientific_mode,
-            latex_args=latex_args,
-            remember_output=False,
+        latex_args = extract_latex_args(args)
+        output_dir = (
+            args.output_dir
+            or self._settings_service.get_settings().default_output_dir
+            or "critiques"
         )
+        self._execute_run(
+            descriptor,
+            output_dir,
+            peer_review=args.peer_review,
+            scientific_mode=args.scientific_mode,
+            latex_args=latex_args,
+            remember_output=args.remember_output,
+            fallback_message=fallback_message,
+            cli_args=args,
+        )
+
+    def _run_interactive(self) -> None:
+        """Backward-compatible wrapper for interactive execution."""
+
+        self._interactive.run()
+
+    def _interactive_run_flow(self) -> None:
+        """Delegate interactive critique flow to the controller."""
+
+        self._interactive._interactive_run_flow()
+
+    def _prompt_for_input_path(self, settings):
+        """Proxy to the interactive controller for input selection."""
+
+        return self._interactive._prompt_for_input_path(settings)
+
+    def _prompt_for_output_directory(self, settings):
+        """Proxy to the interactive controller for output directory selection."""
+
+        return self._interactive._prompt_for_output_directory(settings)
+
+    def _prompt_bool(self, message: str, default: bool) -> bool:
+        """Delegate boolean prompting to the controller."""
+
+        return self._interactive._prompt_bool(message, default)
+
+    def _prompt_latex_options(self, output_dir: Path):
+        """Delegate LaTeX configuration prompts to the controller."""
+
+        return self._interactive._prompt_latex_options(output_dir)
+
+    def _preferences_menu(self) -> None:
+        """Run the preferences management menu via the controller."""
+
+        self._interactive._preferences_menu()
+
+    def _handle_set_default_input(self) -> None:
+        """Delegate default input update to the controller."""
+
+        self._interactive._handle_set_default_input()
+
+    def _handle_set_default_output(self) -> None:
+        """Delegate default output update to the controller."""
+
+        self._interactive._handle_set_default_output()
+
+    def _handle_set_provider(self) -> None:
+        """Delegate provider preference updates to the controller."""
+
+        self._interactive._handle_set_provider()
+
+    def _handle_set_config_path(self) -> None:
+        """Delegate configuration path updates to the controller."""
+
+        self._interactive._handle_set_config_path()
+
+    def _api_keys_menu(self) -> None:
+        """Run the API key management menu via the controller."""
+
+        self._interactive._api_keys_menu()
+
+    def _display_settings(self) -> None:
+        """Display stored settings via the controller."""
+
+        self._interactive._display_settings()
+
+    def _build_cli_input(
+        self, args: argparse.Namespace
+    ) -> tuple[Optional[InputArgument], Optional[str]]:
+        """Construct an input descriptor from parsed arguments."""
+
+        directory_arg = getattr(args, "input_dir", None)
+        if directory_arg:
+            if not self._directory_defaults.enabled:
+                message = (
+                    "Directory input has been disabled via configuration. "
+                    "Set critique.directory_input.enabled to true to re-enable directory aggregation."
+                )
+                self._logger.warning(
+                    "Directory input requested but disabled via configuration."
+                )
+                return None, message
+            return self._make_directory_request(directory_arg, args), None
+
+        raw_input = getattr(args, "input_file", None)
+        if raw_input is None:
+            return None, None
+        if isinstance(raw_input, (PipelineInput, DirectoryInputRequest, FileInputRequest, LiteralTextInputRequest)):
+            return raw_input, None
+        if isinstance(raw_input, Mapping):
+            return raw_input, None
+        if isinstance(raw_input, Path):
+            return FileInputRequest(path=raw_input), None
+        if isinstance(raw_input, str):
+            candidate = Path(raw_input).expanduser()
+            if candidate.exists():
+                return FileInputRequest(path=candidate), None
+            try:
+                literal_request = LiteralTextInputRequest(text=raw_input)
+            except ValueError as exc:
+                return None, f"Invalid input: {exc}"
+            return literal_request, "Input file not found; treating value as literal text."
+        return raw_input, None
+
+    def _make_directory_request(
+        self, raw_root: Union[str, Path], args: argparse.Namespace
+    ) -> DirectoryInputRequest:
+        """Translate CLI arguments into a directory ingestion request."""
+
+        include_patterns = self._parse_pattern_list(
+            getattr(args, "include", None), self._directory_defaults.include
+        )
+        exclude_patterns = self._parse_pattern_list(
+            getattr(args, "exclude", None), self._directory_defaults.exclude
+        )
+        order_arg = getattr(args, "order", None)
+        if order_arg is None and self._directory_defaults.order:
+            order_values = tuple(self._directory_defaults.order)
+        else:
+            order_values = self._parse_pattern_list(order_arg, ())
+
+        order_file_arg = getattr(args, "order_from", None)
+        if order_file_arg:
+            order_file = Path(order_file_arg).expanduser()
+        elif not order_values and self._directory_defaults.order_file:
+            order_file = Path(self._directory_defaults.order_file).expanduser()
+        else:
+            order_file = None
+        recursive = self._resolve_flag(
+            getattr(args, "recursive", None), default=self._directory_defaults.recursive
+        )
+        label_sections = self._resolve_flag(
+            getattr(args, "label_sections", None), default=self._directory_defaults.label_sections
+        )
+        max_files = getattr(args, "max_files", None)
+        if max_files is None:
+            max_files = self._directory_defaults.max_files
+        max_chars = getattr(args, "max_chars", None)
+        if max_chars is None:
+            max_chars = self._directory_defaults.max_chars
+        section_separator = (
+            getattr(args, "section_separator", None) or self._directory_defaults.section_separator
+        )
+
+        return DirectoryInputRequest(
+            root=Path(raw_root).expanduser(),
+            include=include_patterns,
+            exclude=exclude_patterns,
+            recursive=recursive,
+            order=order_values if order_values else None,
+            order_file=order_file,
+            max_files=max_files,
+            max_chars=max_chars,
+            section_separator=section_separator,
+            label_sections=label_sections,
+        )
+
+    @staticmethod
+    def _parse_pattern_list(
+        raw: Optional[Union[str, Sequence[str]]], default: Sequence[str]
+    ) -> Sequence[str]:
+        """Return normalised glob patterns from CLI arguments or defaults."""
+
+        if raw is None:
+            return tuple(default)
+        if isinstance(raw, str):
+            values = [item.strip() for item in raw.split(",") if item.strip()]
+        else:
+            values = [str(item).strip() for item in raw if str(item).strip()]
+        return tuple(values or default)
+
+    @staticmethod
+    def _resolve_flag(value: Optional[bool], *, default: bool) -> bool:
+        """Return a boolean flag using CLI overrides when provided."""
+
+        if value is None:
+            return default
+        return bool(value)
+
+    def _prepare_input_descriptor(
+        self, input_data: InputArgument
+    ) -> Union[PipelineInput, DirectoryInputRequest, FileInputRequest, LiteralTextInputRequest]:
+        """Coerce arbitrary CLI input into pipeline-ready descriptors."""
+
+        if isinstance(input_data, (PipelineInput, DirectoryInputRequest, FileInputRequest, LiteralTextInputRequest)):
+            return input_data
+        if isinstance(input_data, Mapping):
+            return ensure_pipeline_input(input_data)
+        if isinstance(input_data, Path):
+            return FileInputRequest(path=input_data)
+        if isinstance(input_data, str):
+            return LiteralTextInputRequest(text=input_data)
+        return ensure_pipeline_input(input_data)
 
     # Execution helpers ----------------------------------------------------
     def _execute_run(
         self,
-        input_data: Union[PipelineInput, Path, Mapping[str, Any], str],
+        input_data: InputArgument,
         output_dir: Union[Path, str],
         *,
         peer_review: Optional[bool],
         scientific_mode: Optional[bool],
         latex_args: Optional[argparse.Namespace],
         remember_output: bool,
+        fallback_message: Optional[str] = None,
+        cli_args: argparse.Namespace | None = None,
     ) -> None:
+        """Execute a critique run and persist artefacts to disk.
+
+        Args:
+            input_data: Source descriptor resolved from CLI arguments.
+            output_dir: Target directory for run artefacts.
+            peer_review: Optional override for the peer review flag.
+            scientific_mode: Optional override for scientific mode.
+            latex_args: Parsed LaTeX configuration namespace.
+            remember_output: Whether to persist ``output_dir`` as default.
+            fallback_message: Optional message displayed before execution when
+                the CLI had to fall back to a default input description.
+            cli_args: Full CLI namespace used to derive preflight overrides.
+
+        Returns:
+            None.
+
+        Raises:
+            None. All errors are handled and surfaced via user-facing messages.
+
+        Side Effects:
+            Writes critique, peer review, and optional preflight artefacts to
+            disk and updates persisted settings when requested.
+
+        Timeout:
+            Not enforced at this layer; blocking operations rely on downstream
+            services to honour configured timeouts.
+        """
+
         output_path = Path(output_dir)
 
-        raw_value: Optional[str] = None
         try:
-            if isinstance(input_data, PipelineInput):
-                pipeline_input = input_data
-            elif isinstance(input_data, Path):
-                raw_value = str(input_data)
-                pipeline_input = ensure_pipeline_input(
-                    raw_value,
-                    read_file=read_file_content,
-                    assume_path=True,
-                    fallback_to_content=False,
-                )
-            else:
-                if isinstance(input_data, Mapping):
-                    payload = input_data
-                    raw_value = None
-                else:
-                    raw_value = str(input_data)
-                    payload = raw_value
-                pipeline_input = ensure_pipeline_input(
-                    payload,
-                    read_file=read_file_content,
-                    assume_path=True,
-                    fallback_to_content=True,
-                )
-        except FileNotFoundError:
-            if raw_value is not None:
-                self._output(f"Input file not found: {raw_value}")
-            else:
-                self._output("Input file not found.")
-            return
-        except (InvalidPipelineInputError, EmptyPipelineInputError) as exc:
+            descriptor = self._prepare_input_descriptor(input_data)
+        except (InvalidPipelineInputError, EmptyPipelineInputError, ValueError) as exc:
             self._output(f"Invalid input: {exc}")
             return
 
-        if pipeline_input.metadata.get("fallback_reason") == "file_not_found":
-            self._output("Input file not found; treating value as literal text.")
+        if fallback_message:
+            self._output(fallback_message)
+
+        overrides = PreflightCliOverrides.from_namespace(cli_args)
+        preflight_options = build_preflight_options(self._preflight_defaults, overrides)
 
         try:
             result = self._critique_runner.run(
-                pipeline_input,
+                descriptor,
                 peer_review=peer_review,
                 scientific_mode=scientific_mode,
+                preflight_options=preflight_options,
             )
+        except PipelineInputError as exc:
+            self._logger.exception('Repository failed to aggregate input')
+            self._output(f"Failed to load input: {exc}")
+            return
         except MissingApiKeyError as exc:
             self._output(f"Error: {exc}")
             return
         except ConfigurationError as exc:
             self._output(f"Configuration error: {exc}")
             return
+        except FileNotFoundError as exc:
+            self._output(f"Input file not found: {exc}")
+            return
+        except (UnicodeDecodeError, OSError) as exc:
+            self._logger.exception("Failed to load input content")
+            self._output(f"Failed to load input: {exc}")
+            return
         except Exception as exc:  # noqa: BLE001 - surface meaningful failure to the user
             self._logger.exception("Critique execution failed")
             self._output(f"Critique failed: {exc}")
             return
 
+        pipeline_input = result.pipeline_input
         try:
             output_path.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
@@ -239,7 +464,18 @@ class CliApp:
             except SettingsPersistenceError as exc:
                 self._output(f"Warning: Failed to remember output directory ({exc}).")
 
+        defaults = self._preflight_defaults or PreflightCliDefaults()
+        update_preflight_metadata(
+            result,
+            output_path,
+            defaults,
+            logger=self._logger,
+            notify=self._output,
+        )
+
     def _write_file(self, path: Path, content: str, description: str) -> bool:
+        """Persist text content to disk, logging failures."""
+
         try:
             path.write_text(content, encoding="utf-8")
         except OSError as exc:
@@ -247,233 +483,3 @@ class CliApp:
             self._output(f"Warning: Could not write {description} to {path} ({exc}).")
             return False
         return True
-
-    # Prompt helpers -------------------------------------------------------
-    def _prompt_for_input_path(self, settings) -> Optional[Path]:
-        recent = settings.recent_files
-        if recent:
-            self._output("\nRecent files:")
-            for idx, path in enumerate(recent, start=1):
-                self._output(f"  [{idx}] {path}")
-
-        default_display = settings.default_input_path or "<none>"
-        raw = self._input(
-            f"Enter input file path or choose a recent entry [default: {default_display}]: "
-        ).strip()
-
-        candidate: Optional[str]
-        if not raw:
-            candidate = settings.default_input_path
-        elif raw.isdigit() and 1 <= int(raw) <= len(recent):
-            candidate = recent[int(raw) - 1]
-        else:
-            candidate = raw
-
-        if not candidate:
-            self._output("No input selected. Returning to menu.")
-            return None
-
-        resolved = Path(candidate).expanduser()
-        if not resolved.exists():
-            self._output(f"Input file not found: {resolved}")
-            return None
-
-        remember = self._prompt_bool("Remember this as default input", False)
-        if remember:
-            try:
-                self._settings_service.set_default_input_path(str(resolved))
-            except (InvalidPreferenceError, SettingsPersistenceError) as exc:
-                self._output(f"Warning: Failed to store default input ({exc}).")
-
-        return resolved
-
-    def _prompt_for_output_directory(self, settings) -> Path:
-        default_dir = settings.default_output_dir or "critiques"
-        raw = self._input(f"Output directory [{default_dir}]: ").strip()
-        chosen = raw or default_dir
-        resolved = Path(chosen).expanduser()
-        if resolved.exists() and not resolved.is_dir():
-            self._output("Selected output path is not a directory. Using default 'critiques'.")
-            resolved = Path("critiques").resolve()
-
-        remember = self._prompt_bool("Remember this output directory", False)
-        if remember:
-            try:
-                self._settings_service.set_default_output_dir(str(resolved))
-            except (InvalidPreferenceError, SettingsPersistenceError) as exc:
-                self._output(f"Warning: Failed to store default output directory ({exc}).")
-
-        return resolved
-
-    def _prompt_bool(self, message: str, default: bool) -> bool:
-        suffix = "Y/n" if default else "y/N"
-        while True:
-            raw = self._input(f"{message}? [{suffix}]: ").strip().lower()
-            if not raw:
-                return default
-            if raw in {"y", "yes"}:
-                return True
-            if raw in {"n", "no"}:
-                return False
-            self._output("Please respond with 'y' or 'n'.")
-
-    def _prompt_latex_options(self, output_dir: Path) -> Optional[argparse.Namespace]:
-        wants_latex = self._prompt_bool("Generate LaTeX output", False)
-        if not wants_latex:
-            return None
-
-        compile_pdf = self._prompt_bool("Compile LaTeX to PDF", False)
-        default_output = output_dir / "latex_output"
-        latex_dir_raw = self._input(f"LaTeX output directory [{default_output}]: ").strip()
-        latex_dir = Path(latex_dir_raw).expanduser() if latex_dir_raw else default_output
-
-        level = "high"
-        raw_level = self._input("Scientific objectivity level [low/medium/high] (default high): ").strip().lower()
-        if raw_level in {"low", "medium", "high"}:
-            level = raw_level
-
-        direct = self._prompt_bool("Use direct LaTeX conversion", False)
-
-        return SimpleNamespace(
-            latex=True,
-            latex_compile=compile_pdf,
-            latex_output_dir=str(latex_dir),
-            latex_scientific_level=level,
-            direct_latex=direct,
-        )
-
-    # Settings management --------------------------------------------------
-    def _preferences_menu(self) -> None:
-        while True:
-            settings = self._settings_service.get_settings()
-            self._output("\nPreferences")
-            self._output(f"  [1] Default input path: {settings.default_input_path or '<none>'}")
-            self._output(f"  [2] Default output directory: {settings.default_output_dir or 'critiques'}")
-            self._output(f"  [3] Preferred provider: {settings.preferred_provider or '<auto>'}")
-            self._output(f"  [4] Peer review default: {'enabled' if settings.peer_review_default else 'disabled'}")
-            self._output(
-                f"  [5] Scientific mode default: {'enabled' if settings.scientific_mode_default else 'disabled'}"
-            )
-            self._output(f"  [6] Configuration file path: {settings.config_path or '<project config>'}")
-            self._output("  [7] Clear recent files")
-            self._output("  [b] Back")
-            choice = self._input("Select an option: ").strip().lower()
-
-            try:
-                if choice == "1":
-                    self._handle_set_default_input()
-                elif choice == "2":
-                    self._handle_set_default_output()
-                elif choice == "3":
-                    self._handle_set_provider()
-                elif choice == "4":
-                    self._settings_service.set_peer_review_default(
-                        self._prompt_bool("Enable peer review by default", settings.peer_review_default)
-                    )
-                    self._output("Peer review default updated.")
-                elif choice == "5":
-                    self._settings_service.set_scientific_mode_default(
-                        self._prompt_bool(
-                            "Enable scientific methodology by default", settings.scientific_mode_default
-                        )
-                    )
-                    self._output("Scientific mode default updated.")
-                elif choice == "6":
-                    self._handle_set_config_path()
-                elif choice == "7":
-                    self._settings_service.clear_recent_files()
-                    self._output("Recent files cleared.")
-                elif choice in {"b", "back"}:
-                    return
-                else:
-                    self._output("Unrecognised option.")
-            except (InvalidPreferenceError, SettingsPersistenceError) as exc:
-                self._output(f"Failed to update preferences: {exc}")
-
-    def _handle_set_default_input(self) -> None:
-        raw = self._input("Enter default input path (leave blank to clear): ").strip()
-        self._settings_service.set_default_input_path(raw or None)
-        self._output("Default input path updated.")
-
-    def _handle_set_default_output(self) -> None:
-        raw = self._input("Enter default output directory (leave blank to clear): ").strip()
-        if raw:
-            resolved = Path(raw).expanduser()
-            if resolved.exists() and not resolved.is_dir():
-                raise InvalidPreferenceError("Provided path is not a directory.")
-        self._settings_service.set_default_output_dir(raw or None)
-        self._output("Default output directory updated.")
-
-    def _handle_set_provider(self) -> None:
-        raw = self._input("Enter preferred provider key (leave blank for auto): ").strip().lower()
-        self._settings_service.set_preferred_provider(raw or None)
-        if raw:
-            self._output(f"Preferred provider set to '{raw}'.")
-        else:
-            self._output("Preferred provider cleared.")
-
-    def _handle_set_config_path(self) -> None:
-        raw = self._input("Enter path to configuration file (leave blank to use project default): ").strip()
-        if raw:
-            resolved = Path(raw).expanduser()
-            if not resolved.exists():
-                raise InvalidPreferenceError("Configuration file does not exist.")
-        self._settings_service.set_config_path(raw or None)
-        self._output("Configuration path updated.")
-
-    def _api_keys_menu(self) -> None:
-        while True:
-            keys = self._settings_service.list_api_keys()
-            self._output("\nStored API keys:")
-            if keys:
-                for provider, key in keys.items():
-                    self._output(f"  {provider}: {mask_key(key)}")
-            else:
-                self._output("  <none>")
-            self._output("\n  [1] Add or update API key")
-            self._output("  [2] Remove API key")
-            self._output("  [b] Back")
-            choice = self._input("Select an option: ").strip().lower()
-
-            try:
-                if choice == "1":
-                    provider = self._input("Provider name: ").strip()
-                    api_key = self._input("API key: ").strip()
-                    self._settings_service.set_api_key(provider, api_key)
-                    self._output(f"Stored key for {provider.strip().lower()}.")
-                elif choice == "2":
-                    provider = self._input("Provider to remove: ").strip()
-                    self._settings_service.remove_api_key(provider)
-                    self._output(f"Removed key for {provider.strip().lower()}.")
-                elif choice in {"b", "back"}:
-                    return
-                else:
-                    self._output("Unrecognised option.")
-            except (InvalidPreferenceError, SettingsPersistenceError) as exc:
-                self._output(f"Failed to update API keys: {exc}")
-
-    def _display_settings(self) -> None:
-        settings = self._settings_service.get_settings()
-        self._output("\nCurrent settings:")
-        self._output(f"  Default input path: {settings.default_input_path or '<none>'}")
-        self._output(f"  Default output directory: {settings.default_output_dir or 'critiques'}")
-        self._output(f"  Preferred provider: {settings.preferred_provider or '<auto>'}")
-        self._output(f"  Peer review default: {'enabled' if settings.peer_review_default else 'disabled'}")
-        self._output(
-            f"  Scientific mode default: {'enabled' if settings.scientific_mode_default else 'disabled'}"
-        )
-        self._output(f"  Configuration path: {settings.config_path or '<project config>'}")
-        if settings.recent_files:
-            self._output("  Recent files:")
-            for entry in settings.recent_files:
-                self._output(f"    - {entry}")
-        else:
-            self._output("  Recent files: <none>")
-        if settings.api_keys:
-            self._output("  Stored API keys:")
-            for provider, key in settings.api_keys.items():
-                self._output(f"    - {provider}: {mask_key(key)}")
-        else:
-            self._output("  Stored API keys: <none>")
-
-__all__ = ["CliApp"]
