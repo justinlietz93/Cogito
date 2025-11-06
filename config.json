@@ -78,5 +78,36 @@
         "section_separator": "\n\n---\n\n"
       }
     }
+  },
+  "research_apis": {
+    "pubmed": {
+      "enabled": true,
+      "timeout": 30,
+      "max_retries": 3,
+      "retry_delay": 1.0,
+      "tool_name": "Cogito",
+      "email": ""
+    },
+    "semantic_scholar": {
+      "enabled": true,
+      "timeout": 30,
+      "max_retries": 3,
+      "retry_delay": 1.0
+    },
+    "crossref": {
+      "enabled": true,
+      "timeout": 30,
+      "max_retries": 3,
+      "retry_delay": 1.0,
+      "email": "cogito@example.com"
+    },
+    "web_search": {
+      "enabled": true,
+      "timeout": 30,
+      "max_retries": 3,
+      "retry_delay": 1.0,
+      "search_engine": "duckduckgo",
+      "use_fallback": true
+    }
   }
 }
