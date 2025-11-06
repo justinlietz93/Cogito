@@ -26,6 +26,7 @@ import json
 
 # Import the provider factory
 from .providers import call_with_retry, ProviderError, ApiCallError, ApiResponseError, JsonParsingError, JsonProcessingError
+from .prompt_texts import REASONING_TREE_DECOMPOSITION_PROMPT
 
 # Default configuration values
 DEFAULT_MAX_DEPTH = 3

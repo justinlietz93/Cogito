@@ -11,15 +11,12 @@ from ...domain import (
     ProjectDocument,
     ResearchProposalResult,
 )
+from ...prompt_texts import (
+    RESEARCH_GENERATION_SYSTEM_PROMPT,
+    RESEARCH_PROPOSAL_PROMPT_TEMPLATE,
+)
 from .exceptions import ProjectDocumentsNotFound
 from .ports import ContentGenerator, ProjectDocumentRepository, ProposalRepository
-
-_SYSTEM_PROMPT = (
-    "You are an expert software engineer and technical writer specializing in creating "
-    "practical, step-by-step implementation guides that focus on building and creation "
-    "rather than theory."
-)
-
 
 class ResearchProposalGenerationService:
     """Coordinates the research proposal generation workflow."""
@@ -39,7 +36,7 @@ class ResearchProposalGenerationService:
         self._generator = content_generator
         self._document_order = tuple(document_order or DEFAULT_DOCUMENT_ORDER)
         self._max_tokens = max(1, max_tokens)
-        self._system_prompt = system_prompt or _SYSTEM_PROMPT
+        self._system_prompt = system_prompt or RESEARCH_GENERATION_SYSTEM_PROMPT
 
     def generate_proposal(self, *, max_tokens: int | None = None) -> ResearchProposalResult:
         """Generate a research proposal from the available project documents."""
@@ -93,43 +90,19 @@ class ResearchProposalGenerationService:
     def _build_prompt(
         self, documents: Sequence[ProjectDocument], project_title: str
     ) -> str:
-        sections: list[str] = [
-            f"Create a formal academic research proposal for a project titled \"{project_title}\".",
-            "",
-            "Use the following content from previous design documents to create a comprehensive, well-structured academic research proposal.",
-            "Format it according to standard academic conventions with proper sections, citations, and academic tone.",
-            "",
-            "The research proposal should include:",
-            "1. Title Page",
-            "2. Abstract",
-            "3. Introduction and Problem Statement",
-            "4. Literature Review",
-            "5. Research Questions and Objectives",
-            "6. Methodology and Technical Approach",
-            "7. Implementation Plan and Timeline",
-            "8. Expected Results and Impact",
-            "9. Conclusion",
-            "10. References",
-            "",
-            "Below are the source documents to synthesize into the proposal:",
-            "",
-        ]
-
+        document_sections: list[str] = []
         for document in documents:
             section_name = document.name.replace(".md", "").replace("_", " ").title()
-            sections.append(f"===== {section_name} =====")
-            sections.append(document.content.rstrip())
-            sections.append("")
+            document_sections.append(f"===== {section_name} =====")
+            document_sections.append(document.content.rstrip())
+            document_sections.append("")
 
-        sections.extend(
-            [
-                "Create a cohesive, professionally formatted academic research proposal that integrates these materials.",
-                "Use formal academic language and structure. Ensure proper citation of external works where appropriate.",
-                "Focus on presenting this as a serious, innovative research initiative with clear methodology and expected outcomes.",
-                "The proposal should be comprehensive enough for submission to a major research funding organization.",
-            ]
+        combined_sections = "\n".join(document_sections).strip()
+        prompt = RESEARCH_PROPOSAL_PROMPT_TEMPLATE.format(
+            project_title=project_title,
+            document_sections=combined_sections,
         )
-        return "\n".join(sections).strip() + "\n"
+        return prompt.strip() + "\n"
 
     def _normalise_tokens(self, override: int | None) -> int:
         if override is None:

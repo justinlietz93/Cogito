@@ -13,6 +13,12 @@ from ...domain import (
     ResearchGapAnalysis,
     ResearchPaper,
 )
+from ...prompt_texts import (
+    RESEARCH_ENHANCEMENT_PROMPT_TEMPLATE,
+    RESEARCH_ENHANCEMENT_SYSTEM_PROMPT,
+    RESEARCH_GAP_ANALYSIS_PROMPT_TEMPLATE,
+    RESEARCH_GAP_ANALYSIS_SYSTEM_PROMPT,
+)
 from .exceptions import ProjectDocumentsNotFound
 from .ports import ContentGenerator, ProjectRepository, ReferenceService
 
@@ -166,10 +172,7 @@ class ResearchEnhancementService:
     ) -> str:
         prompt = self._build_gap_prompt(project_content, papers)
         return self._generator.generate(
-            system_prompt=(
-                "You are a research scientist with expertise in identifying research gaps and "
-                "novel contributions in academic proposals."
-            ),
+            system_prompt=RESEARCH_GAP_ANALYSIS_SYSTEM_PROMPT,
             user_prompt=prompt,
             max_tokens=self._gap_analysis_tokens,
         )
@@ -182,10 +185,7 @@ class ResearchEnhancementService:
     ) -> str:
         prompt = self._build_enhancement_prompt(project_content, papers, gap_analysis)
         return self._generator.generate(
-            system_prompt=(
-                "You are an expert academic writer specializing in creating rigorous research "
-                "proposals with proper citations and academic formatting."
-            ),
+            system_prompt=RESEARCH_ENHANCEMENT_SYSTEM_PROMPT,
             user_prompt=prompt,
             max_tokens=self._enhancement_tokens,
         )
@@ -195,25 +195,10 @@ class ResearchEnhancementService:
     ) -> str:
         paper_text = "\n\n".join(self._format_paper_summary(index, paper) for index, paper in enumerate(papers, 1))
         truncated_project = self._truncate(project_content, 5_000)
-        return (
-            "Research Gap Analysis\n\n"
-            "Please analyze the following research project description and identify gaps or "
-            "novel contributions when compared to the existing literature provided below.\n\n"
-            "Focus on:\n"
-            "1. Identifying unique aspects of the proposed research not covered in existing literature\n"
-            "2. Potential novel connections between concepts in the project and existing research\n"
-            "3. Areas where the project could make meaningful contributions to the field\n"
-            "4. Suggestions for strengthening the project's novelty and impact\n\n"
-            "=== PROJECT DESCRIPTION ===\n"
-            f"{truncated_project}\n\n"
-            "=== RELEVANT EXISTING LITERATURE ===\n"
-            f"{paper_text or 'No papers were retrieved.'}\n\n"
-            "=== ANALYSIS REQUESTED ===\n"
-            "Provide a detailed analysis structured in the following sections:\n"
-            "1. Uniqueness Analysis\n"
-            "2. Novel Connections\n"
-            "3. Contribution Opportunities\n"
-            "4. Recommendations\n"
+        literature_summaries = paper_text or 'No papers were retrieved.'
+        return RESEARCH_GAP_ANALYSIS_PROMPT_TEMPLATE.format(
+            project_description=truncated_project,
+            literature_summaries=literature_summaries,
         )
 
     def _build_enhancement_prompt(
@@ -226,24 +211,11 @@ class ResearchEnhancementService:
             self._format_citation(index, paper) for index, paper in enumerate(papers, 1)
         )
         truncated_content = self._truncate(project_content, 7_000)
-        return (
-            "Research Proposal Enhancement\n\n"
-            "Please enhance the following research project with insights from the research gap analysis "
-            "and integrate relevant citations from the provided literature.\n\n"
-            "=== PROJECT CONTENT ===\n"
-            f"{truncated_content}\n\n"
-            "=== RESEARCH GAP ANALYSIS ===\n"
-            f"{gap_analysis.content}\n\n"
-            "=== RELEVANT LITERATURE (For Citations) ===\n"
-            f"{citations_text or 'No literature was retrieved.'}\n\n"
-            "=== ENHANCEMENT REQUESTED ===\n"
-            "Create an enhanced academic research proposal that:\n"
-            "1. Maintains the original project's core ideas and structure\n"
-            "2. Incorporates insights from the research gap analysis\n"
-            "3. Integrates relevant citations from the literature list\n"
-            "4. Strengthens the proposal's academic rigor and novelty claims\n"
-            "5. Includes a proper literature review section and bibliography\n\n"
-            "Format the proposal as a formal academic document with all necessary sections."
+        citations = citations_text or 'No literature was retrieved.'
+        return RESEARCH_ENHANCEMENT_PROMPT_TEMPLATE.format(
+            project_content=truncated_content,
+            gap_analysis=gap_analysis.content,
+            literature_citations=citations,
         )
 
     def _format_paper_summary(self, index: int, paper: ResearchPaper) -> str:
