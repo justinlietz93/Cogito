@@ -1,0 +1,95 @@
+%% Cogito C4 Components Diagram - Critique Pipeline
+%% Container: Critique Pipeline
+%% Commit: 0f51527
+%% Last Updated: 2025-11-06
+
+graph TB
+    subgraph "Presentation Layer"
+        CLI[CLI App<br/>presentation/cli/app.py<br/>Command-line interface]
+        CritiqueCLI[Critique CLI<br/>presentation/cli/preflight.py<br/>Critique-specific commands]
+    end
+
+    subgraph "Application Layer - Critique"
+        CritiqueService[Critique Service<br/>application/critique/services.py<br/>Critique use case orchestration]
+        CritiqueConfig[Critique Configuration<br/>application/critique/configuration.py<br/>Pipeline configuration]
+        PreflightService[Preflight Service<br/>application/preflight/services.py<br/>Extraction & query planning]
+        PreflightOrchestrator[Preflight Orchestrator<br/>application/preflight/orchestrator.py<br/>Multi-stage coordination]
+    end
+
+    subgraph "Application Layer - Research"
+        ResearchService[Research Execution Service<br/>application/research_execution/services.py<br/>Query execution coordination]
+    end
+
+    subgraph "Domain Layer"
+        CouncilOrchestrator[Council Orchestrator<br/>council_orchestrator.py<br/>Agent lifecycle management]
+        ReasoningAgent[Reasoning Agent<br/>reasoning_agent.py<br/>Individual critique agent]
+        ReasoningTree[Reasoning Tree<br/>reasoning_tree.py<br/>Hierarchical reasoning execution]
+        CouncilSynthesis[Council Synthesis<br/>council/synthesis.py<br/>Multi-agent result aggregation]
+        CouncilAdjustments[Council Adjustments<br/>council/adjustments.py<br/>Confidence weighting & Arbiter logic]
+        ContentAssessor[Content Assessor<br/>content_assessor.py<br/>Content quality evaluation]
+        PipelineInput[Pipeline Input<br/>pipeline_input.py<br/>Input data structure]
+    end
+
+    subgraph "Infrastructure Layer"
+        PreflightGateway[Preflight Gateway<br/>infrastructure/preflight/openai_gateway.py<br/>LLM API for extraction]
+        CritiqueRepository[Critique Repository<br/>infrastructure/critique/<br/>Persistence adapters]
+        DirectoryRepo[Directory Repository<br/>infrastructure/io/directory_repository.py<br/>Multi-file input aggregation]
+        IOPorts[I/O Ports<br/>infrastructure/io/<br/>File system operations]
+    end
+
+    subgraph "Cross-Cutting"
+        PromptTexts[Prompt Texts<br/>prompt_texts.py<br/>Prompt templates library]
+        ConfigLoader[Config Loader<br/>config_loader.py<br/>Configuration management]
+        OutputFormatter[Output Formatter<br/>output_formatter.py<br/>Result formatting]
+        ScientificFormatter[Scientific Review Formatter<br/>scientific_review_formatter.py<br/>Peer review formatting]
+    end
+
+    %% Flow: User input to critique
+    CLI -->|Parses commands| CritiqueCLI
+    CritiqueCLI -->|Loads directory input| DirectoryRepo
+    CritiqueCLI -->|Invokes critique| CritiqueService
+
+    %% Configuration
+    CritiqueService -->|Loads config| CritiqueConfig
+    CritiqueConfig -->|Reads from| ConfigLoader
+
+    %% Preflight stage
+    CritiqueService -->|Optional extraction| PreflightOrchestrator
+    PreflightOrchestrator -->|Coordinates stages| PreflightService
+    PreflightService -->|Calls LLM| PreflightGateway
+    PreflightOrchestrator -->|Executes queries| ResearchService
+
+    %% Council execution
+    CritiqueService -->|Orchestrates critique| CouncilOrchestrator
+    CouncilOrchestrator -->|Instantiates| ReasoningAgent
+    CouncilOrchestrator -->|Executes reasoning| ReasoningTree
+    ReasoningAgent -->|Uses prompts| PromptTexts
+    ReasoningAgent -->|Evaluates content| ContentAssessor
+
+    %% Synthesis and adjustment
+    CouncilOrchestrator -->|Aggregates results| CouncilSynthesis
+    CouncilOrchestrator -->|Applies weighting| CouncilAdjustments
+
+    %% Output
+    CritiqueService -->|Formats output| OutputFormatter
+    CritiqueService -->|Formats peer review| ScientificFormatter
+    OutputFormatter -->|Writes results| IOPorts
+    ScientificFormatter -->|Writes reviews| IOPorts
+
+    %% Data flow
+    DirectoryRepo -->|Provides| PipelineInput
+    PipelineInput -->|Input to| CritiqueService
+    CritiqueService -->|Persists results| CritiqueRepository
+
+    %% Styling
+    classDef presentationClass fill:#4A90E2,stroke:#2E5C8A,color:#fff
+    classDef applicationClass fill:#9B59B6,stroke:#5A2E8A,color:#fff
+    classDef domainClass fill:#E24A4A,stroke:#8A2E2E,color:#fff
+    classDef infraClass fill:#95A5A6,stroke:#5A6A6B,color:#fff
+    classDef crossCuttingClass fill:#F39C12,stroke:#8A5A0C,color:#fff
+
+    class CLI,CritiqueCLI presentationClass
+    class CritiqueService,CritiqueConfig,PreflightService,PreflightOrchestrator,ResearchService applicationClass
+    class CouncilOrchestrator,ReasoningAgent,ReasoningTree,CouncilSynthesis,CouncilAdjustments,ContentAssessor,PipelineInput domainClass
+    class PreflightGateway,CritiqueRepository,DirectoryRepo,IOPorts infraClass
+    class PromptTexts,ConfigLoader,OutputFormatter,ScientificFormatter crossCuttingClass

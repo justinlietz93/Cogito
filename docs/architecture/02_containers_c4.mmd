@@ -1,0 +1,138 @@
+%% Cogito C4 Containers Diagram
+%% System: Cogito AI Research Platform
+%% Commit: 0f51527
+%% Last Updated: 2025-11-06
+
+graph TB
+    subgraph "External Actors"
+        User[User<br/>Researcher/Reviewer]
+    end
+
+    subgraph "Cogito Platform"
+        subgraph "Entry Points"
+            CLI[CLI Interface<br/>run_critique.py, run_research.py<br/>Python CLI]
+        end
+
+        subgraph "Core Pipelines"
+            CritiquePipeline[Critique Pipeline<br/>council_orchestrator.py<br/>Multi-agent critique workflow]
+            SyncreticPipeline[Syncretic Catalyst<br/>thesis_builder.py, research_enhancer.py<br/>Research synthesis engine]
+        end
+
+        subgraph "Orchestration Layer"
+            Preflight[Preflight Orchestrator<br/>application/preflight/<br/>Query planning & extraction]
+            ReasoningTree[Reasoning Tree<br/>reasoning_tree.py<br/>Hierarchical reasoning engine]
+            CouncilOrch[Council Orchestrator<br/>council_orchestrator.py<br/>Agent coordination]
+        end
+
+        subgraph "Agent Layer"
+            ReasoningAgents[Reasoning Agents<br/>reasoning_agent.py<br/>Persona-based critique agents]
+            ThesisAgents[Thesis Agents<br/>syncretic_catalyst/domain/<br/>Research generation agents]
+        end
+
+        subgraph "Research Integration"
+            ResearchAPIs[Research APIs Orchestrator<br/>research_apis/orchestrator.py<br/>Multi-source research coordination]
+            ArXivIntegration[ArXiv Integration<br/>arxiv/<br/>Scientific paper retrieval]
+            VectorStore[Vector Store<br/>arxiv/vector_store.py<br/>Semantic search & embeddings]
+        end
+
+        subgraph "Provider Abstraction"
+            Providers[LLM Providers<br/>providers/<br/>Multi-provider abstraction]
+            OpenAIClient[OpenAI Client<br/>providers/openai_client.py]
+            GeminiClient[Gemini Client<br/>providers/gemini_client.py]
+            AnthropicClient[Anthropic Client<br/>providers/anthropic_client.py]
+        end
+
+        subgraph "Output Processing"
+            LaTeX[LaTeX Generator<br/>latex/<br/>Academic document generation]
+            OutputFormatter[Output Formatter<br/>output_formatter.py<br/>Result formatting]
+        end
+
+        subgraph "Infrastructure"
+            ConfigLoader[Config Loader<br/>config_loader.py<br/>Configuration management]
+            IOLayer[I/O Layer<br/>infrastructure/io/<br/>File system operations]
+        end
+    end
+
+    subgraph "External Systems"
+        LLMProviders[LLM Provider APIs<br/>OpenAI, Anthropic, Google, DeepSeek]
+        ScientificAPIs[Scientific APIs<br/>ArXiv, PubMed, Semantic Scholar, CrossRef]
+        WebAPIs[Web Search APIs]
+        FileSystem[(File System<br/>Cache, Vectors, Documents)]
+    end
+
+    %% User interactions
+    User -->|Commands & documents| CLI
+
+    %% CLI orchestration
+    CLI -->|Critique requests| CritiquePipeline
+    CLI -->|Synthesis requests| SyncreticPipeline
+
+    %% Critique pipeline flow
+    CritiquePipeline -->|Extracts key points| Preflight
+    CritiquePipeline -->|Coordinates agents| CouncilOrch
+    CouncilOrch -->|Executes reasoning| ReasoningTree
+    CouncilOrch -->|Manages personas| ReasoningAgents
+
+    %% Syncretic pipeline flow
+    SyncreticPipeline -->|Generates research| ThesisAgents
+    SyncreticPipeline -->|Coordinates workflow| Preflight
+
+    %% Research integration
+    Preflight -->|Executes queries| ResearchAPIs
+    ResearchAPIs -->|Retrieves papers| ArXivIntegration
+    ResearchAPIs -->|Searches APIs| ScientificAPIs
+    ArXivIntegration -->|Semantic search| VectorStore
+    ThesisAgents -->|Retrieves evidence| ResearchAPIs
+
+    %% Agent interactions with providers
+    ReasoningAgents -->|Requests completions| Providers
+    ThesisAgents -->|Requests completions| Providers
+    Providers --> OpenAIClient
+    Providers --> GeminiClient
+    Providers --> AnthropicClient
+
+    %% Provider external calls
+    OpenAIClient -->|API calls| LLMProviders
+    GeminiClient -->|API calls| LLMProviders
+    AnthropicClient -->|API calls| LLMProviders
+
+    %% Research external calls
+    ResearchAPIs -->|API calls| ScientificAPIs
+    ResearchAPIs -->|Search queries| WebAPIs
+    ArXivIntegration -->|API calls| ScientificAPIs
+
+    %% Output generation
+    CouncilOrch -->|Formats results| OutputFormatter
+    SyncreticPipeline -->|Generates LaTeX| LaTeX
+    OutputFormatter -->|Returns to| CLI
+    LaTeX -->|Writes documents| FileSystem
+
+    %% Configuration & storage
+    ConfigLoader -->|Provides config| CritiquePipeline
+    ConfigLoader -->|Provides config| SyncreticPipeline
+    VectorStore -->|Stores/retrieves| FileSystem
+    IOLayer -->|Reads/writes| FileSystem
+
+    %% Result to user
+    CLI -->|Critiques & theses| User
+
+    %% Styling
+    classDef entryClass fill:#4A90E2,stroke:#2E5C8A,color:#fff
+    classDef pipelineClass fill:#E24A4A,stroke:#8A2E2E,color:#fff
+    classDef orchClass fill:#9B59B6,stroke:#5A2E8A,color:#fff
+    classDef agentClass fill:#50C878,stroke:#2E8A4F,color:#fff
+    classDef researchClass fill:#F39C12,stroke:#8A5A0C,color:#fff
+    classDef providerClass fill:#3498DB,stroke:#1F5A8A,color:#fff
+    classDef outputClass fill:#E67E22,stroke:#8A4A0C,color:#fff
+    classDef infraClass fill:#95A5A6,stroke:#5A6A6B,color:#fff
+    classDef externalClass fill:#34495E,stroke:#1F2A33,color:#fff
+
+    class CLI entryClass
+    class CritiquePipeline,SyncreticPipeline pipelineClass
+    class Preflight,ReasoningTree,CouncilOrch orchClass
+    class ReasoningAgents,ThesisAgents agentClass
+    class ResearchAPIs,ArXivIntegration,VectorStore researchClass
+    class Providers,OpenAIClient,GeminiClient,AnthropicClient providerClass
+    class LaTeX,OutputFormatter outputClass
+    class ConfigLoader,IOLayer infraClass
+    class LLMProviders,ScientificAPIs,WebAPIs,FileSystem externalClass

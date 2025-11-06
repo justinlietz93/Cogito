@@ -1,0 +1,178 @@
+%% Critique Council - End-to-End Sequence Diagram
+%% System: Cogito
+%% Commit: 0f51527
+%% Last Updated: 2025-11-06
+
+sequenceDiagram
+    actor User
+    participant CLI as CLI App
+    participant Config as Config Loader
+    participant DirRepo as Directory Repository
+    participant Preflight as Preflight Orchestrator
+    participant PreflightGW as Preflight Gateway (LLM)
+    participant Research as Research APIs
+    participant Council as Council Orchestrator
+    participant Agent as Reasoning Agent
+    participant Tree as Reasoning Tree
+    participant Synthesis as Council Synthesis
+    participant Adjust as Council Adjustments (Arbiter/Judge)
+    participant Formatter as Output Formatter
+    participant FS as File System
+
+    User->>CLI: run_critique.py --input-dir ./docs --scientific --PR
+    
+    %% Configuration
+    CLI->>Config: load_config()
+    Config->>Config: Read config.json, .env
+    Config-->>CLI: Configuration object
+    
+    %% Directory Input
+    CLI->>DirRepo: load_input(include="**/*.md", exclude="archive/**")
+    DirRepo->>FS: Scan directory tree
+    FS-->>DirRepo: File list
+    DirRepo->>DirRepo: Apply ordering, aggregate content
+    DirRepo-->>CLI: PipelineInput object
+    
+    %% Optional Preflight Extraction
+    opt Preflight Enabled
+        CLI->>Preflight: run_preflight(pipeline_input)
+        
+        Note over Preflight: Stage 1: Extract Key Points
+        Preflight->>PreflightGW: extract_key_points(content)
+        PreflightGW->>PreflightGW: Build extraction prompt
+        PreflightGW->>LLM: API call (OpenAI/Claude)
+        LLM-->>PreflightGW: Structured JSON response
+        PreflightGW->>PreflightGW: Parse & validate schema
+        PreflightGW-->>Preflight: List[ExtractedPoint]
+        Preflight->>FS: Write artifacts/points.json
+        
+        Note over Preflight: Stage 2: Build Query Plan
+        Preflight->>PreflightGW: build_query_plan(points)
+        PreflightGW->>PreflightGW: Generate query planning prompt
+        PreflightGW->>LLM: API call
+        LLM-->>PreflightGW: Query plan JSON
+        PreflightGW->>PreflightGW: Parse queries
+        PreflightGW-->>Preflight: QueryPlan
+        Preflight->>FS: Write artifacts/queries.json
+        
+        Note over Preflight: Stage 3: Execute Research
+        loop For each query
+            Preflight->>Research: execute_query(query)
+            Research->>Research: Dispatch to PubMed, Semantic Scholar, CrossRef
+            par Parallel API Calls
+                Research->>PubMed: search(query)
+                Research->>SemanticScholar: search(query)
+                Research->>CrossRef: search(query)
+            end
+            PubMed-->>Research: Results
+            SemanticScholar-->>Research: Results
+            CrossRef-->>Research: Results
+            Research->>Research: Aggregate & deduplicate
+            Research-->>Preflight: Research results
+        end
+        Preflight->>FS: Write artifacts/research_results.json
+        Preflight-->>CLI: Enriched PipelineInput
+    end
+    
+    %% Council Critique
+    CLI->>Council: run_critique_council(enriched_input)
+    
+    Note over Council: Phase 1: Agent Instantiation
+    Council->>Council: Load persona definitions (Aristotle, Descartes, Kant, etc.)
+    Council->>Council: Randomize persona assignment
+    loop For each persona
+        Council->>Agent: new ReasoningAgent(persona, content)
+        Agent->>Agent: Load persona-specific prompts
+        Agent-->>Council: Agent instance
+    end
+    
+    Note over Council: Phase 2: Initial Critique Round
+    par Parallel Agent Execution
+        loop For each agent
+            Council->>Tree: execute_reasoning_tree(agent)
+            Tree->>Tree: Decompose into Phase → Task → Step hierarchy
+            loop For each phase
+                loop For each task
+                    loop For each step
+                        Tree->>Agent: generate_step_reasoning(step)
+                        Agent->>LLM: API call with persona-specific prompt
+                        LLM-->>Agent: Reasoning response
+                        Agent->>Agent: Extract confidence score
+                        Agent-->>Tree: Step result
+                    end
+                    Tree->>Tree: Aggregate task results
+                end
+                Tree->>Tree: Aggregate phase results
+            end
+            Tree-->>Council: Complete reasoning tree
+        end
+    end
+    
+    Note over Council: Phase 3: Self-Critique Round
+    loop For each agent
+        Council->>Agent: self_critique(initial_critique)
+        Agent->>Agent: Generate critique of own work
+        Agent->>LLM: API call with self-critique prompt
+        LLM-->>Agent: Self-critique response
+        Agent->>Agent: Refine original critique
+        Agent-->>Council: Refined critique
+    end
+    
+    Note over Council: Phase 4: Council Synthesis
+    Council->>Synthesis: synthesize_results(all_critiques)
+    Synthesis->>Synthesis: Identify common themes
+    Synthesis->>Synthesis: Identify contradictions
+    Synthesis->>Synthesis: Weight by confidence
+    Synthesis-->>Council: Synthesized assessment
+    
+    Note over Council: Phase 5: Arbiter Review
+    Council->>Adjust: apply_arbiter_logic(synthesis)
+    Adjust->>Adjust: Evaluate methodological rigor
+    Adjust->>Adjust: Assess evidence quality
+    Adjust->>Adjust: Identify unknown unknowns
+    Adjust->>Adjust: Calculate Arbiter confidence adjustments
+    Adjust-->>Council: Arbiter report
+    
+    Note over Council: Phase 6: Judge Verdict
+    Council->>Adjust: apply_judge_weighting(arbiter_report, synthesis)
+    Adjust->>Adjust: Combine Arbiter assessment with Council synthesis
+    Adjust->>Adjust: Apply confidence interval calculations
+    Adjust->>Adjust: Weight by evidence strength
+    Adjust->>Adjust: Factor in unknown-unknowns penalty
+    Adjust->>Adjust: Generate final verdict
+    Adjust-->>Council: Judge verdict with confidence
+    
+    Council-->>CLI: Complete critique data structure
+    
+    %% Output Formatting
+    opt Scientific Peer Review
+        CLI->>Formatter: format_scientific_review(critique_data)
+        Formatter->>Formatter: Generate reviewer credentials
+        Formatter->>Formatter: Format methodological analysis
+        Formatter->>Formatter: Structure recommendations
+        Formatter-->>CLI: Formatted peer review
+    end
+    
+    CLI->>Formatter: format_critique_output(critique_data, PR=true)
+    Formatter->>Formatter: Apply academic formatting
+    Formatter->>Formatter: Add confidence scores
+    Formatter->>Formatter: Structure sections
+    Formatter-->>CLI: Formatted output
+    
+    %% Optional LaTeX Generation
+    opt LaTeX Enabled
+        CLI->>LaTeX: generate_latex(formatted_output)
+        LaTeX->>LaTeX: Apply template (ACM, literature-review, etc.)
+        LaTeX->>LaTeX: Process citations (BibTeX)
+        LaTeX->>LaTeX: Format math expressions
+        LaTeX->>FS: Write .tex file
+        LaTeX->>LaTeX: Compile PDF (pdflatex)
+        LaTeX->>FS: Write PDF
+        LaTeX-->>CLI: LaTeX compilation result
+    end
+    
+    %% Final Output
+    CLI->>FS: Write critique output file
+    CLI-->>User: Display summary & file location
+    
+    Note over User,FS: Complete: Input → Preflight → Council → Arbiter → Judge → Output

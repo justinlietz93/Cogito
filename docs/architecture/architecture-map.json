@@ -1,0 +1,428 @@
+{
+  "system": "Cogito",
+  "commit": "0f51527",
+  "analysis_date": "2025-11-06",
+  "languages": [
+    "Python"
+  ],
+  "runtime": "Python 3.x",
+  "containers": [
+    {
+      "name": "critique_pipeline",
+      "tech": "Python CLI",
+      "entry_point": "run_critique.py",
+      "description": "Multi-agent critique orchestration",
+      "deps": [
+        "council_orchestrator",
+        "reasoning_tree",
+        "reasoning_agent"
+      ]
+    },
+    {
+      "name": "syncretic_catalyst",
+      "tech": "Python CLI",
+      "entry_point": "src/syncretic_catalyst/thesis_builder.py",
+      "description": "Research synthesis engine",
+      "deps": [
+        "thesis_agents",
+        "research_generator",
+        "vector_store"
+      ]
+    },
+    {
+      "name": "preflight_orchestrator",
+      "tech": "Python Service",
+      "path": "src/application/preflight/orchestrator.py",
+      "description": "Query planning and extraction",
+      "deps": [
+        "openai_gateway",
+        "extraction_parser",
+        "query_parser"
+      ]
+    },
+    {
+      "name": "research_apis",
+      "tech": "Python Service",
+      "path": "src/research_apis/orchestrator.py",
+      "description": "Multi-source research integration",
+      "deps": [
+        "pubmed",
+        "semantic_scholar",
+        "crossref",
+        "web_search"
+      ]
+    },
+    {
+      "name": "vector_store",
+      "tech": "Python Service",
+      "path": "src/arxiv/vector_store.py",
+      "description": "Semantic search and embeddings",
+      "deps": [
+        "arxiv_reference_service",
+        "vector_db"
+      ]
+    },
+    {
+      "name": "latex_processing",
+      "tech": "Python Service",
+      "path": "src/latex/",
+      "description": "Academic document generation",
+      "deps": [
+        "formatter",
+        "markdown_to_latex",
+        "latex_compiler"
+      ]
+    },
+    {
+      "name": "provider_abstraction",
+      "tech": "Python Library",
+      "path": "src/providers/",
+      "description": "Multi-LLM client management",
+      "deps": [
+        "openai_client",
+        "gemini_client",
+        "anthropic_client"
+      ]
+    }
+  ],
+  "components": [
+    {
+      "container": "critique_pipeline",
+      "name": "council_orchestrator",
+      "path": "src/council_orchestrator.py",
+      "loc": 327,
+      "deps": [
+        "reasoning_agent",
+        "reasoning_tree"
+      ]
+    },
+    {
+      "container": "critique_pipeline",
+      "name": "reasoning_agent",
+      "path": "src/reasoning_agent.py",
+      "loc": 376,
+      "deps": []
+    },
+    {
+      "container": "critique_pipeline",
+      "name": "reasoning_tree",
+      "path": "src/reasoning_tree.py",
+      "loc": 386,
+      "deps": []
+    },
+    {
+      "container": "critique_pipeline",
+      "name": "council_synthesis",
+      "path": "src/council/synthesis.py",
+      "loc": 147,
+      "deps": []
+    },
+    {
+      "container": "critique_pipeline",
+      "name": "council_adjustments",
+      "path": "src/council/adjustments.py",
+      "loc": 89,
+      "deps": []
+    },
+    {
+      "container": "syncretic_catalyst",
+      "name": "thesis_builder",
+      "path": "src/syncretic_catalyst/thesis_builder.py",
+      "loc": 92,
+      "deps": []
+    },
+    {
+      "container": "syncretic_catalyst",
+      "name": "research_generator",
+      "path": "src/syncretic_catalyst/research_generator.py",
+      "loc": 76,
+      "deps": []
+    },
+    {
+      "container": "preflight_orchestrator",
+      "name": "openai_gateway",
+      "path": "src/infrastructure/preflight/openai_gateway.py",
+      "loc": 1235,
+      "deps": []
+    }
+  ],
+  "pipelines": [
+    {
+      "name": "Critique Council",
+      "description": "Multi-agent critique with Arbiter/Judge weighting",
+      "stages": [
+        "Input Ingestion",
+        "Preflight (Extraction, Query Planning, Research)",
+        "Agent Instantiation",
+        "Hierarchical Reasoning",
+        "Self-Critique",
+        "Council Synthesis",
+        "Arbiter Review",
+        "Judge Verdict",
+        "Output Formatting"
+      ],
+      "files": [
+        "src/council_orchestrator.py",
+        "src/reasoning_agent.py",
+        "src/reasoning_tree.py",
+        "src/council/synthesis.py",
+        "src/council/adjustments.py"
+      ],
+      "entrypoints": [
+        "run_critique.py",
+        "src/main.py"
+      ]
+    },
+    {
+      "name": "Syncretic Catalyst",
+      "description": "Research synthesis and thesis generation",
+      "stages": [
+        "Concept Analysis",
+        "Agent Definition",
+        "Vector Search Initialization",
+        "Parallel Research Execution",
+        "Content Generation",
+        "Citation Management",
+        "Thesis Assembly",
+        "LaTeX Generation"
+      ],
+      "files": [
+        "src/syncretic_catalyst/thesis_builder.py",
+        "src/syncretic_catalyst/research_enhancer.py",
+        "src/syncretic_catalyst/research_generator.py",
+        "src/syncretic_catalyst/application/workflow.py"
+      ],
+      "entrypoints": [
+        "src/syncretic_catalyst/thesis_builder.py"
+      ]
+    },
+    {
+      "name": "Preflight",
+      "description": "Key point extraction and research query planning",
+      "stages": [
+        "Content Analysis",
+        "Key Point Extraction",
+        "Query Plan Generation",
+        "Multi-Source Research Execution",
+        "Result Aggregation"
+      ],
+      "files": [
+        "src/application/preflight/orchestrator.py",
+        "src/application/preflight/services.py",
+        "src/infrastructure/preflight/openai_gateway.py"
+      ],
+      "entrypoints": [
+        "CLI flag: --preflight-extract"
+      ]
+    }
+  ],
+  "stores": [
+    {
+      "type": "filesystem",
+      "usage": "Caching, artifacts, outputs",
+      "paths": [
+        "input/",
+        "artifacts/",
+        "latex_output/",
+        "critiques/"
+      ]
+    },
+    {
+      "type": "vector",
+      "usage": "Semantic search, paper embeddings",
+      "implementation": "Custom vector store with NumPy",
+      "embedding_provider": "OpenAI (with local fallback)"
+    }
+  ],
+  "integrations": [
+    {
+      "name": "OpenAI",
+      "type": "LLM Provider",
+      "paths": [
+        "src/providers/openai_client.py"
+      ],
+      "models": [
+        "GPT-5",
+        "GPT-4.1-mini"
+      ],
+      "usage": "Primary LLM, embeddings"
+    },
+    {
+      "name": "Anthropic",
+      "type": "LLM Provider",
+      "paths": [
+        "src/providers/anthropic_client.py"
+      ],
+      "models": [
+        "Claude"
+      ],
+      "usage": "Advanced reasoning, fallback"
+    },
+    {
+      "name": "Google Gemini",
+      "type": "LLM Provider",
+      "paths": [
+        "src/providers/gemini_client.py"
+      ],
+      "models": [
+        "Gemini 2.5 Pro"
+      ],
+      "usage": "Multi-modal analysis"
+    },
+    {
+      "name": "DeepSeek",
+      "type": "LLM Provider",
+      "paths": [
+        "src/providers/deepseek_client.py"
+      ],
+      "models": [
+        "DeepSeek Reasoner"
+      ],
+      "usage": "Deep reasoning chains"
+    },
+    {
+      "name": "ArXiv",
+      "type": "Research API",
+      "paths": [
+        "src/arxiv/arxiv_reference_service.py"
+      ],
+      "usage": "Scientific paper retrieval (2M+ papers)"
+    },
+    {
+      "name": "PubMed",
+      "type": "Research API",
+      "paths": [
+        "src/research_apis/pubmed.py"
+      ],
+      "usage": "Biomedical literature search"
+    },
+    {
+      "name": "Semantic Scholar",
+      "type": "Research API",
+      "paths": [
+        "src/research_apis/semantic_scholar.py"
+      ],
+      "usage": "Academic graph, citation networks"
+    },
+    {
+      "name": "CrossRef",
+      "type": "Research API",
+      "paths": [
+        "src/research_apis/crossref.py"
+      ],
+      "usage": "Citation metadata, DOI resolution"
+    },
+    {
+      "name": "Web Search",
+      "type": "Research API",
+      "paths": [
+        "src/research_apis/web_search.py"
+      ],
+      "usage": "General web knowledge"
+    }
+  ],
+  "metrics": {
+    "total_modules": 148,
+    "total_loc": 26226,
+    "total_dependencies": 62,
+    "cycles": [],
+    "hotspots": 28,
+    "files_exceeding_loc_limit": 2,
+    "test_coverage": {
+      "overall": 0.65,
+      "target": 0.8,
+      "by_category": {
+        "unit": 0.7,
+        "integration": 0.6,
+        "e2e": 0.5
+      }
+    },
+    "complexity": {
+      "average_cyclomatic": 15,
+      "max_cyclomatic": 25
+    }
+  },
+  "risks": [
+    {
+      "id": "R1",
+      "title": "prompt_texts.py exceeds LOC limit by 1255 lines",
+      "severity": "H",
+      "where": "src/prompt_texts.py",
+      "rationale": "Single 1755 LOC file causes maintenance burden, merge conflicts, and difficult code review"
+    },
+    {
+      "id": "R2",
+      "title": "openai_gateway.py exceeds LOC limit by 735 lines",
+      "severity": "H",
+      "where": "src/infrastructure/preflight/openai_gateway.py",
+      "rationale": "1235 LOC file with multiple responsibilities needs separation of concerns"
+    },
+    {
+      "id": "R3",
+      "title": "Token cost explosion without circuit breakers",
+      "severity": "M",
+      "where": "src/providers/",
+      "rationale": "No protection against cascading LLM calls can lead to budget overruns and rate limit exhaustion"
+    },
+    {
+      "id": "R4",
+      "title": "No distributed tracing for multi-agent workflows",
+      "severity": "M",
+      "where": "Global",
+      "rationale": "Debugging multi-agent workflows difficult without correlation IDs and structured logging"
+    },
+    {
+      "id": "R5",
+      "title": "PII handling policy undefined",
+      "severity": "M",
+      "where": "Global",
+      "rationale": "Compliance risk and data privacy concerns without formal policy"
+    },
+    {
+      "id": "R6",
+      "title": "Configuration fragmentation",
+      "severity": "M",
+      "where": "config.json, config.yaml, .env",
+      "rationale": "Multiple config sources with unclear precedence causes inconsistent behavior"
+    },
+    {
+      "id": "R7",
+      "title": "Test coverage below 80% target",
+      "severity": "M",
+      "where": "Global",
+      "rationale": "65% coverage leaves quality blind spots, especially in error paths and edge cases"
+    },
+    {
+      "id": "R8",
+      "title": "High instability in 12 modules",
+      "severity": "L",
+      "where": "Infrastructure adapters",
+      "rationale": "Modules with instability > 0.8 may require frequent changes, though acceptable for adapters"
+    },
+    {
+      "id": "R9",
+      "title": "Vector store memory usage can exceed 1.7GB",
+      "severity": "L",
+      "where": "src/arxiv/vector_store.py",
+      "rationale": "Large vector databases can cause memory pressure on constrained systems"
+    },
+    {
+      "id": "R10",
+      "title": "Cache invalidation strategy undocumented",
+      "severity": "L",
+      "where": "src/arxiv/db_cache_manager.py",
+      "rationale": "Unclear TTL policy may lead to serving stale data"
+    }
+  ],
+  "architecture_scores": {
+    "clarity": 4.0,
+    "boundary_discipline": 4.0,
+    "pipeline_separability": 5.0,
+    "observability": 2.0,
+    "reproducibility": 3.0,
+    "security_basics": 3.0,
+    "performance_hygiene": 3.0,
+    "test_depth": 4.0,
+    "overall": 3.5
+  }
+}

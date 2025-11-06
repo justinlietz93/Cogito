@@ -1,0 +1,1316 @@
+{
+  "total_modules": 148,
+  "total_dependencies": 62,
+  "cycles": [],
+  "metrics": {
+    "config_loader": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 107
+    },
+    "content_assessor": {
+      "fan_in": 1,
+      "fan_out": 0,
+      "instability": 0.0,
+      "loc": 263
+    },
+    "council_orchestrator": {
+      "fan_in": 1,
+      "fan_out": 1,
+      "instability": 0.5,
+      "loc": 271
+    },
+    "pipeline_input": {
+      "fan_in": 13,
+      "fan_out": 0,
+      "instability": 0.0,
+      "loc": 279
+    },
+    "reasoning_agent": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 275
+    },
+    "output_formatter": {
+      "fan_in": 1,
+      "fan_out": 0,
+      "instability": 0.0,
+      "loc": 157
+    },
+    "reasoning_tree": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 305
+    },
+    "main": {
+      "fan_in": 1,
+      "fan_out": 3,
+      "instability": 0.75,
+      "loc": 155
+    },
+    "arxiv_reference_service": {
+      "fan_in": 2,
+      "fan_out": 0,
+      "instability": 0.0,
+      "loc": 11
+    },
+    "reasoning_agent_self_critique": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 204
+    },
+    "input_reader": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 37
+    },
+    "scientific_review_formatter": {
+      "fan_in": 1,
+      "fan_out": 0,
+      "instability": 0.0,
+      "loc": 209
+    },
+    "__init__": {
+      "fan_in": 0,
+      "fan_out": 2,
+      "instability": 1.0,
+      "loc": 8
+    },
+    "prompt_texts": {
+      "fan_in": 5,
+      "fan_out": 0,
+      "instability": 0.0,
+      "loc": 1380
+    },
+    "council.adjustments": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 89
+    },
+    "council.synthesis": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 147
+    },
+    "council.logging": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 28
+    },
+    "council.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 10
+    },
+    "application.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 0
+    },
+    "syncretic_catalyst.research_enhancer": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 104
+    },
+    "syncretic_catalyst.orchestrator": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 4
+    },
+    "syncretic_catalyst.thesis_builder": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 92
+    },
+    "syncretic_catalyst.ai_clients": {
+      "fan_in": 0,
+      "fan_out": 2,
+      "instability": 1.0,
+      "loc": 86
+    },
+    "syncretic_catalyst.research_generator": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 76
+    },
+    "syncretic_catalyst.assemble_research": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 72
+    },
+    "latex.cli": {
+      "fan_in": 1,
+      "fan_out": 1,
+      "instability": 0.5,
+      "loc": 110
+    },
+    "latex.formatter": {
+      "fan_in": 0,
+      "fan_out": 1,
+      "instability": 1.0,
+      "loc": 317
+    },
+    "latex.config": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 124
+    },
+    "latex.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 7
+    },
+    "research_apis.orchestrator": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 283
+    },
+    "research_apis.crossref": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 199
+    },
+    "research_apis.semantic_scholar": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 204
+    },
+    "research_apis.pubmed": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 302
+    },
+    "research_apis.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 19
+    },
+    "research_apis.base": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 120
+    },
+    "research_apis.web_search": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 260
+    },
+    "infrastructure.timeouts": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 124
+    },
+    "infrastructure.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 0
+    },
+    "providers.deepseek_v3_client": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 87
+    },
+    "providers.deepseek_client": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 203
+    },
+    "providers.model_config": {
+      "fan_in": 0,
+      "fan_out": 1,
+      "instability": 1.0,
+      "loc": 85
+    },
+    "providers.exceptions": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 38
+    },
+    "providers.anthropic_client": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 162
+    },
+    "providers.openai_client": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 361
+    },
+    "providers.decorators": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 133
+    },
+    "providers.gemini_client": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 260
+    },
+    "providers.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 230
+    },
+    "providers.claude_client": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 124
+    },
+    "arxiv.arxiv_vector_reference_service": {
+      "fan_in": 0,
+      "fan_out": 1,
+      "instability": 1.0,
+      "loc": 252
+    },
+    "arxiv.bibtex_converter": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 113
+    },
+    "arxiv.utils": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 142
+    },
+    "arxiv.semantic_scorer": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 219
+    },
+    "arxiv.smart_vector_store": {
+      "fan_in": 0,
+      "fan_out": 2,
+      "instability": 1.0,
+      "loc": 110
+    },
+    "arxiv.vector_store": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 325
+    },
+    "arxiv.cache_manager": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 133
+    },
+    "arxiv.arxiv_reference_service": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 292
+    },
+    "arxiv.arxiv_agno_service": {
+      "fan_in": 0,
+      "fan_out": 3,
+      "instability": 1.0,
+      "loc": 209
+    },
+    "arxiv.__init__": {
+      "fan_in": 0,
+      "fan_out": 1,
+      "instability": 1.0,
+      "loc": 8
+    },
+    "arxiv.db_cache_manager": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 289
+    },
+    "arxiv.api_client": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 166
+    },
+    "arxiv.vector_db": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 305
+    },
+    "arxiv.agno_integration": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 211
+    },
+    "domain.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 0
+    },
+    "presentation.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 0
+    },
+    "application.preflight.orchestrator": {
+      "fan_in": 2,
+      "fan_out": 1,
+      "instability": 0.3333333333333333,
+      "loc": 152
+    },
+    "application.preflight.prompts": {
+      "fan_in": 1,
+      "fan_out": 1,
+      "instability": 0.5,
+      "loc": 257
+    },
+    "application.preflight.query_parser": {
+      "fan_in": 1,
+      "fan_out": 0,
+      "instability": 0.0,
+      "loc": 292
+    },
+    "application.preflight.ports": {
+      "fan_in": 1,
+      "fan_out": 1,
+      "instability": 0.5,
+      "loc": 80
+    },
+    "application.preflight.schema_validation": {
+      "fan_in": 1,
+      "fan_out": 0,
+      "instability": 0.0,
+      "loc": 209
+    },
+    "application.preflight.services": {
+      "fan_in": 0,
+      "fan_out": 1,
+      "instability": 1.0,
+      "loc": 137
+    },
+    "application.preflight.schemas": {
+      "fan_in": 1,
+      "fan_out": 0,
+      "instability": 0.0,
+      "loc": 59
+    },
+    "application.preflight.extraction_parser": {
+      "fan_in": 1,
+      "fan_out": 0,
+      "instability": 0.0,
+      "loc": 294
+    },
+    "application.preflight.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 27
+    },
+    "application.user_settings.ports": {
+      "fan_in": 1,
+      "fan_out": 0,
+      "instability": 0.0,
+      "loc": 11
+    },
+    "application.user_settings.services": {
+      "fan_in": 2,
+      "fan_out": 0,
+      "instability": 0.0,
+      "loc": 123
+    },
+    "application.user_settings.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 0
+    },
+    "application.critique.configuration": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 111
+    },
+    "application.critique.requests": {
+      "fan_in": 4,
+      "fan_out": 0,
+      "instability": 0.0,
+      "loc": 110
+    },
+    "application.critique.ports": {
+      "fan_in": 3,
+      "fan_out": 1,
+      "instability": 0.25,
+      "loc": 105
+    },
+    "application.critique.exceptions": {
+      "fan_in": 1,
+      "fan_out": 0,
+      "instability": 0.0,
+      "loc": 7
+    },
+    "application.critique.services": {
+      "fan_in": 1,
+      "fan_out": 1,
+      "instability": 0.5,
+      "loc": 161
+    },
+    "application.critique.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 0
+    },
+    "application.research_execution.services": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 246
+    },
+    "application.research_execution.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 6
+    },
+    "syncretic_catalyst.application.workflow": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 195
+    },
+    "syncretic_catalyst.application.framework": {
+      "fan_in": 0,
+      "fan_out": 1,
+      "instability": 1.0,
+      "loc": 82
+    },
+    "syncretic_catalyst.application.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 9
+    },
+    "syncretic_catalyst.infrastructure.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 17
+    },
+    "syncretic_catalyst.infrastructure.file_repository": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 151
+    },
+    "syncretic_catalyst.domain.thesis_agents": {
+      "fan_in": 0,
+      "fan_out": 1,
+      "instability": 1.0,
+      "loc": 58
+    },
+    "syncretic_catalyst.domain.thesis": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 34
+    },
+    "syncretic_catalyst.domain.research_enhancement": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 44
+    },
+    "syncretic_catalyst.domain.research_generation": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 18
+    },
+    "syncretic_catalyst.domain.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 39
+    },
+    "syncretic_catalyst.domain.models": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 17
+    },
+    "syncretic_catalyst.presentation.cli": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 40
+    },
+    "syncretic_catalyst.presentation.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 3
+    },
+    "syncretic_catalyst.application.thesis.ports": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 27
+    },
+    "syncretic_catalyst.application.thesis.services": {
+      "fan_in": 0,
+      "fan_out": 1,
+      "instability": 1.0,
+      "loc": 257
+    },
+    "syncretic_catalyst.application.thesis.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 10
+    },
+    "syncretic_catalyst.application.research_enhancement.ports": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 30
+    },
+    "syncretic_catalyst.application.research_enhancement.exceptions": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 3
+    },
+    "syncretic_catalyst.application.research_enhancement.services": {
+      "fan_in": 0,
+      "fan_out": 1,
+      "instability": 1.0,
+      "loc": 252
+    },
+    "syncretic_catalyst.application.research_enhancement.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 15
+    },
+    "syncretic_catalyst.application.research_generation.ports": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 16
+    },
+    "syncretic_catalyst.application.research_generation.exceptions": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 3
+    },
+    "syncretic_catalyst.application.research_generation.services": {
+      "fan_in": 0,
+      "fan_out": 1,
+      "instability": 1.0,
+      "loc": 101
+    },
+    "syncretic_catalyst.application.research_generation.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 3
+    },
+    "syncretic_catalyst.infrastructure.thesis.reference_service": {
+      "fan_in": 0,
+      "fan_out": 1,
+      "instability": 1.0,
+      "loc": 50
+    },
+    "syncretic_catalyst.infrastructure.thesis.clock": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 7
+    },
+    "syncretic_catalyst.infrastructure.thesis.output_repository": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 62
+    },
+    "syncretic_catalyst.infrastructure.thesis.ai_client": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 15
+    },
+    "syncretic_catalyst.infrastructure.thesis.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 11
+    },
+    "syncretic_catalyst.infrastructure.research_enhancement.repository": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 85
+    },
+    "syncretic_catalyst.infrastructure.research_enhancement.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 3
+    },
+    "syncretic_catalyst.infrastructure.research_generation.repository": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 62
+    },
+    "syncretic_catalyst.infrastructure.research_generation.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 3
+    },
+    "latex.utils.windows_engine_finder": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 73
+    },
+    "latex.utils.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 8
+    },
+    "latex.utils.file_manager": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 157
+    },
+    "latex.utils.latex_compiler": {
+      "fan_in": 0,
+      "fan_out": 2,
+      "instability": 1.0,
+      "loc": 326
+    },
+    "latex.converters.math_formatter": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 200
+    },
+    "latex.converters.markdown_to_latex": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 392
+    },
+    "latex.converters.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 8
+    },
+    "latex.converters.direct_latex_generator": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 280
+    },
+    "latex.processors.content_processor": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 51
+    },
+    "latex.processors.citation_processor": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 212
+    },
+    "latex.processors.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 9
+    },
+    "latex.processors.jargon_processor": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 141
+    },
+    "infrastructure.preflight.openai_gateway": {
+      "fan_in": 0,
+      "fan_out": 7,
+      "instability": 1.0,
+      "loc": 1032
+    },
+    "infrastructure.preflight.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 20
+    },
+    "infrastructure.user_settings.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 0
+    },
+    "infrastructure.user_settings.file_repository": {
+      "fan_in": 0,
+      "fan_out": 1,
+      "instability": 1.0,
+      "loc": 37
+    },
+    "infrastructure.io.directory_repository": {
+      "fan_in": 0,
+      "fan_out": 3,
+      "instability": 1.0,
+      "loc": 385
+    },
+    "infrastructure.io.file_repository": {
+      "fan_in": 0,
+      "fan_out": 3,
+      "instability": 1.0,
+      "loc": 102
+    },
+    "infrastructure.critique.gateway": {
+      "fan_in": 0,
+      "fan_out": 1,
+      "instability": 1.0,
+      "loc": 21
+    },
+    "infrastructure.critique.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 0
+    },
+    "domain.preflight.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 3
+    },
+    "domain.preflight.models": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 128
+    },
+    "domain.user_settings.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 0
+    },
+    "domain.user_settings.models": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 36
+    },
+    "presentation.cli.interactive": {
+      "fan_in": 0,
+      "fan_out": 2,
+      "instability": 1.0,
+      "loc": 289
+    },
+    "presentation.cli.utils": {
+      "fan_in": 0,
+      "fan_out": 1,
+      "instability": 1.0,
+      "loc": 80
+    },
+    "presentation.cli.research_cli": {
+      "fan_in": 0,
+      "fan_out": 3,
+      "instability": 1.0,
+      "loc": 304
+    },
+    "presentation.cli.preflight": {
+      "fan_in": 0,
+      "fan_out": 1,
+      "instability": 1.0,
+      "loc": 465
+    },
+    "presentation.cli.directory_defaults": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 153
+    },
+    "presentation.cli.app": {
+      "fan_in": 0,
+      "fan_out": 8,
+      "instability": 1.0,
+      "loc": 410
+    },
+    "presentation.cli.__init__": {
+      "fan_in": 0,
+      "fan_out": 0,
+      "instability": 0,
+      "loc": 0
+    }
+  },
+  "hotspots": [
+    {
+      "module": "infrastructure.preflight.openai_gateway",
+      "issues": [
+        "Exceeds 500 LOC limit (1032 lines)",
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 7,
+        "instability": 1.0,
+        "loc": 1032
+      }
+    },
+    {
+      "module": "pipeline_input",
+      "issues": [
+        "High fan-in (13)"
+      ],
+      "metrics": {
+        "fan_in": 13,
+        "fan_out": 0,
+        "instability": 0.0,
+        "loc": 279
+      }
+    },
+    {
+      "module": "__init__",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 2,
+        "instability": 1.0,
+        "loc": 8
+      }
+    },
+    {
+      "module": "prompt_texts",
+      "issues": [
+        "Exceeds 500 LOC limit (1380 lines)"
+      ],
+      "metrics": {
+        "fan_in": 5,
+        "fan_out": 0,
+        "instability": 0.0,
+        "loc": 1380
+      }
+    },
+    {
+      "module": "syncretic_catalyst.ai_clients",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 2,
+        "instability": 1.0,
+        "loc": 86
+      }
+    },
+    {
+      "module": "latex.formatter",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 1,
+        "instability": 1.0,
+        "loc": 317
+      }
+    },
+    {
+      "module": "providers.model_config",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 1,
+        "instability": 1.0,
+        "loc": 85
+      }
+    },
+    {
+      "module": "arxiv.arxiv_vector_reference_service",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 1,
+        "instability": 1.0,
+        "loc": 252
+      }
+    },
+    {
+      "module": "arxiv.smart_vector_store",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 2,
+        "instability": 1.0,
+        "loc": 110
+      }
+    },
+    {
+      "module": "arxiv.arxiv_agno_service",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 3,
+        "instability": 1.0,
+        "loc": 209
+      }
+    },
+    {
+      "module": "arxiv.__init__",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 1,
+        "instability": 1.0,
+        "loc": 8
+      }
+    },
+    {
+      "module": "application.preflight.services",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 1,
+        "instability": 1.0,
+        "loc": 137
+      }
+    },
+    {
+      "module": "syncretic_catalyst.application.framework",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 1,
+        "instability": 1.0,
+        "loc": 82
+      }
+    },
+    {
+      "module": "syncretic_catalyst.domain.thesis_agents",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 1,
+        "instability": 1.0,
+        "loc": 58
+      }
+    },
+    {
+      "module": "syncretic_catalyst.application.thesis.services",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 1,
+        "instability": 1.0,
+        "loc": 257
+      }
+    },
+    {
+      "module": "syncretic_catalyst.application.research_enhancement.services",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 1,
+        "instability": 1.0,
+        "loc": 252
+      }
+    },
+    {
+      "module": "syncretic_catalyst.application.research_generation.services",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 1,
+        "instability": 1.0,
+        "loc": 101
+      }
+    },
+    {
+      "module": "syncretic_catalyst.infrastructure.thesis.reference_service",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 1,
+        "instability": 1.0,
+        "loc": 50
+      }
+    },
+    {
+      "module": "latex.utils.latex_compiler",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 2,
+        "instability": 1.0,
+        "loc": 326
+      }
+    },
+    {
+      "module": "infrastructure.user_settings.file_repository",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 1,
+        "instability": 1.0,
+        "loc": 37
+      }
+    },
+    {
+      "module": "infrastructure.io.directory_repository",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 3,
+        "instability": 1.0,
+        "loc": 385
+      }
+    },
+    {
+      "module": "infrastructure.io.file_repository",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 3,
+        "instability": 1.0,
+        "loc": 102
+      }
+    },
+    {
+      "module": "infrastructure.critique.gateway",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 1,
+        "instability": 1.0,
+        "loc": 21
+      }
+    },
+    {
+      "module": "presentation.cli.interactive",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 2,
+        "instability": 1.0,
+        "loc": 289
+      }
+    },
+    {
+      "module": "presentation.cli.utils",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 1,
+        "instability": 1.0,
+        "loc": 80
+      }
+    },
+    {
+      "module": "presentation.cli.research_cli",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 3,
+        "instability": 1.0,
+        "loc": 304
+      }
+    },
+    {
+      "module": "presentation.cli.preflight",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 1,
+        "instability": 1.0,
+        "loc": 465
+      }
+    },
+    {
+      "module": "presentation.cli.app",
+      "issues": [
+        "Highly unstable (1.00)"
+      ],
+      "metrics": {
+        "fan_in": 0,
+        "fan_out": 8,
+        "instability": 1.0,
+        "loc": 410
+      }
+    }
+  ],
+  "largest_files": [
+    [
+      "prompt_texts",
+      1380
+    ],
+    [
+      "infrastructure.preflight.openai_gateway",
+      1032
+    ],
+    [
+      "presentation.cli.preflight",
+      465
+    ],
+    [
+      "presentation.cli.app",
+      410
+    ],
+    [
+      "latex.converters.markdown_to_latex",
+      392
+    ],
+    [
+      "infrastructure.io.directory_repository",
+      385
+    ],
+    [
+      "providers.openai_client",
+      361
+    ],
+    [
+      "latex.utils.latex_compiler",
+      326
+    ],
+    [
+      "arxiv.vector_store",
+      325
+    ],
+    [
+      "latex.formatter",
+      317
+    ],
+    [
+      "reasoning_tree",
+      305
+    ],
+    [
+      "arxiv.vector_db",
+      305
+    ],
+    [
+      "presentation.cli.research_cli",
+      304
+    ],
+    [
+      "research_apis.pubmed",
+      302
+    ],
+    [
+      "application.preflight.extraction_parser",
+      294
+    ],
+    [
+      "arxiv.arxiv_reference_service",
+      292
+    ],
+    [
+      "application.preflight.query_parser",
+      292
+    ],
+    [
+      "arxiv.db_cache_manager",
+      289
+    ],
+    [
+      "presentation.cli.interactive",
+      289
+    ],
+    [
+      "research_apis.orchestrator",
+      283
+    ]
+  ]
+}
