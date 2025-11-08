@@ -11,6 +11,17 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
 from dotenv import load_dotenv
+<<<<<<< HEAD
+=======
+from src import critique_goal_document # Now synchronous
+from src.scientific_review_formatter import format_scientific_peer_review
+from src.latex.cli import add_latex_arguments, handle_latex_output
+from src.input_reader import (
+    find_all_input_files,
+    concatenate_inputs,
+    materialize_concatenation_to_temp,
+)
+>>>>>>> 7f5694d (Add comprehensive test scripts for LaTeX configuration, content extraction, and vector store functionality)
 
 from src.application.critique.configuration import ModuleConfigBuilder
 from src.application.critique.exceptions import ConfigurationError, MissingApiKeyError
@@ -27,6 +38,7 @@ from src.presentation.cli.app import CliApp, DirectoryInputDefaults
 from src.presentation.cli.preflight import PreflightCliDefaults, load_preflight_defaults
 
 
+<<<<<<< HEAD
 class ConfigLoadError(Exception):
     """Raised when the configuration file cannot be loaded."""
 
@@ -280,6 +292,25 @@ def build_argument_parser() -> argparse.ArgumentParser:
         max_points=None,
         max_queries=None,
     )
+=======
+# Make main synchronous
+def main():
+    # --- Argument Parsing ---
+    parser = argparse.ArgumentParser(description="Run the Critique Council. Pipelines ingest only from INPUT/ by design.")
+    parser.add_argument(
+        "input_path",
+        nargs="?",
+        default="INPUT/",
+        help="Path under INPUT/ or the INPUT/ directory itself (default). Pipelines only ingest from INPUT/."
+    )
+    parser.add_argument("--ingest-batch", action="store_true",
+                        help="Concatenate all files in INPUT/ (recursive) into one combined input.")
+    parser.add_argument("--PR", "--peer-review", action="store_true",
+                        help="Enable Peer Review mode, enhancing personas with SME perspective.")
+    parser.add_argument("--scientific", action="store_true",
+                        help="Use scientific methodology agents instead of philosophical agents.")
+    # Add LaTeX-related arguments
+>>>>>>> 7f5694d (Add comprehensive test scripts for LaTeX configuration, content extraction, and vector store functionality)
     parser = add_latex_arguments(parser)
     return parser
 
@@ -590,7 +621,129 @@ def main() -> None:
     logger = logging.getLogger(__name__)
     load_dotenv()
 
+<<<<<<< HEAD
     repository = JsonFileSettingsRepository()
+=======
+    # --- Prepare Module Config ---
+    # Structure the configuration to include all available providers
+    module_config = {
+        'api': {
+            'providers': {},  # Provider configuration container
+            'primary_provider': app_config.get('api', {}).get('primary_provider', 'gemini'),
+        },
+        'reasoning_tree': app_config.get('reasoning_tree', {}),
+        'council_orchestrator': app_config.get('council_orchestrator', {})
+    }
+    
+    # Add Gemini configuration if available
+    if 'gemini' in app_config.get('api', {}):
+        module_config['api']['providers']['gemini'] = {
+            **app_config.get('api', {}).get('gemini', {}),
+            'resolved_key': os.getenv('GEMINI_API_KEY'),
+        }
+        # Also add at top level for backward compatibility with older provider modules
+        module_config['api']['gemini'] = module_config['api']['providers']['gemini']
+        
+    # Add DeepSeek configuration if available
+    if 'deepseek' in app_config.get('api', {}) or os.getenv('DEEPSEEK_API_KEY'):
+        module_config['api']['providers']['deepseek'] = {
+            **app_config.get('api', {}).get('deepseek', {}),
+            'api_key': os.getenv('DEEPSEEK_API_KEY'),
+        }
+        # Also add at top level for backward compatibility with older provider modules
+        module_config['api']['deepseek'] = module_config['api']['providers']['deepseek']
+        
+    # Add OpenAI configuration if available
+    if 'openai' in app_config.get('api', {}) or os.getenv('OPENAI_API_KEY'):
+        module_config['api']['providers']['openai'] = {
+            **app_config.get('api', {}).get('openai', {}),
+            'resolved_key': os.getenv('OPENAI_API_KEY'),
+        }
+        # Also add at top level for backward compatibility with older provider modules
+        module_config['api']['openai'] = module_config['api']['providers']['openai']
+    
+    # For backward compatibility with older components
+    primary_provider = module_config['api']['primary_provider']
+    if primary_provider in module_config['api']['providers'] and 'resolved_key' in module_config['api']['providers'][primary_provider]:
+        module_config['api']['resolved_key'] = module_config['api']['providers'][primary_provider]['resolved_key']
+    
+    root_logger.info("Module configuration prepared.")
+    # -------------------------
+
+    # --- Validate Primary Provider API Key ---
+    primary_provider = module_config['api']['primary_provider']
+    # Check both locations (providers nested and direct)
+    api_key_missing = (
+        (primary_provider not in module_config['api']['providers'] or 
+         not module_config['api']['providers'][primary_provider].get('resolved_key', module_config['api']['providers'][primary_provider].get('api_key')))
+        and
+        (primary_provider not in module_config['api'] or 
+         not module_config['api'][primary_provider].get('resolved_key', module_config['api'][primary_provider].get('api_key')))
+    )
+    
+    if api_key_missing:
+        error_msg = f"Primary provider '{primary_provider}' API key not found in .env file or environment. Cannot proceed."
+        print(f"Error: {error_msg}")
+        root_logger.error(error_msg)
+        return
+    # -------------------------
+
+    # Resolve ingestion strictly from INPUT/ and support arbitrary number of files
+    base_dir = os.getcwd()
+    input_dir = os.path.abspath(os.path.join(base_dir, "INPUT"))
+    arg_path = args.input_path.strip() if getattr(args, "input_path", None) else "INPUT/"
+    arg_abs = os.path.abspath(arg_path)
+
+    # Helper to ensure path is under INPUT/
+    def _is_under_input(path_abs: str) -> bool:
+        try:
+            return os.path.commonpath([path_abs, input_dir]) == input_dir
+        except Exception:
+            return False
+
+    if os.path.isdir(arg_abs):
+        # Enforce INPUT/ directory
+        if os.path.normpath(arg_abs) != os.path.normpath(input_dir):
+            print(f"Error: Pipelines ingest only from {input_dir}. Provided directory '{arg_abs}' is not allowed.")
+            root_logger.error("Disallowed input directory outside INPUT/")
+            return
+        files = find_all_input_files(base_dir=base_dir, input_dir_name="INPUT", recursive=True)
+        if not files:
+            print(f"Error: No input files found under {input_dir}")
+            root_logger.error("No input files found under INPUT/")
+            return
+        print(f"INGEST: Found {len(files)} input files under {input_dir}")
+        combined = concatenate_inputs(files)
+        input_file = materialize_concatenation_to_temp(combined)
+    elif os.path.isfile(arg_abs):
+        # Enforce the file is within INPUT/
+        if not _is_under_input(arg_abs):
+            print(f"Error: Pipelines ingest only from {input_dir}. Provided file '{arg_abs}' is not under INPUT/.")
+            root_logger.error("Disallowed input file outside INPUT/")
+            return
+        if args.ingest_batch:
+            files = find_all_input_files(base_dir=base_dir, input_dir_name="INPUT", recursive=True)
+            print(f"INGEST: --ingest-batch enabled; concatenating {len(files)} files from {input_dir}")
+            combined = concatenate_inputs(files)
+            input_file = materialize_concatenation_to_temp(combined)
+        else:
+            input_file = arg_abs
+    else:
+        # Default: batch ingest from INPUT/
+        files = find_all_input_files(base_dir=base_dir, input_dir_name="INPUT", recursive=True)
+        if not files:
+            print(f"Error: No input files found under {input_dir}")
+            root_logger.error("No input files found under INPUT/")
+            return
+        print(f"INGEST: Found {len(files)} input files under {input_dir}")
+        combined = concatenate_inputs(files)
+        input_file = materialize_concatenation_to_temp(combined)
+
+    peer_review_mode = args.PR # or args.peer_review
+    scientific_mode = args.scientific
+    
+    root_logger.info(f"Initiating critique for: {input_file} (Peer Review Mode: {peer_review_mode}, Scientific Mode: {scientific_mode})")
+>>>>>>> 7f5694d (Add comprehensive test scripts for LaTeX configuration, content extraction, and vector store functionality)
     try:
         settings_service = UserSettingsService(repository)
     except SettingsPersistenceError as exc:
