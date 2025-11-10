@@ -1,4 +1,22 @@
-"""Command line entry point for the Cogito critique pipelines."""
+"""Command line entry point for the Cogito critique pipelines.
+
+Purpose:
+- Provide a unified CLI to run the critique council.
+- Enforce INPUT-only ingestion with support for an arbitrary number of files.
+- Optionally run preflight stages (point extraction and query planning).
+
+External dependencies:
+- CLI execution (argparse)
+- Environment (.env) via python-dotenv
+- Providers configured through config.json and user settings
+
+Fallback semantics:
+- If persisted user settings cannot be loaded, an in-memory fallback repository is used.
+- If preflight configuration is incomplete, the preflight orchestrator is skipped.
+
+Timeout strategy:
+- This module performs local orchestration; HTTP timeouts are configured within gateway classes.
+"""
 
 from __future__ import annotations
 
@@ -11,18 +29,15 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
 from dotenv import load_dotenv
-<<<<<<< HEAD
-=======
-from src import critique_goal_document # Now synchronous
-from src.scientific_review_formatter import format_scientific_peer_review
-from src.latex.cli import add_latex_arguments, handle_latex_output
+
+# INPUT ingestion utilities (centralized)
 from src.input_reader import (
     find_all_input_files,
     concatenate_inputs,
     materialize_concatenation_to_temp,
 )
->>>>>>> 7f5694d (Add comprehensive test scripts for LaTeX configuration, content extraction, and vector store functionality)
 
+# Application and infrastructure imports
 from src.application.critique.configuration import ModuleConfigBuilder
 from src.application.critique.exceptions import ConfigurationError, MissingApiKeyError
 from src.application.critique.services import CritiqueRunner
@@ -38,12 +53,12 @@ from src.presentation.cli.app import CliApp, DirectoryInputDefaults
 from src.presentation.cli.preflight import PreflightCliDefaults, load_preflight_defaults
 
 
-<<<<<<< HEAD
 class ConfigLoadError(Exception):
     """Raised when the configuration file cannot be loaded."""
 
 
 def setup_logging() -> None:
+    """Initialize module logging to logs/system.log."""
     logs_dir = Path("logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
     system_log = logs_dir / "system.log"
@@ -58,6 +73,7 @@ def setup_logging() -> None:
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
+    """Create and return the CLI argument parser."""
     parser = argparse.ArgumentParser(
         description="Run the Cogito critique council from the command line.",
         epilog=(
@@ -71,214 +87,39 @@ def build_argument_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=argparse.RawTextHelpFormatter,
     )
+    # Note: We preserve these CLI options for compatibility, but main() enforces INPUT/ only.
     parser.add_argument("input_file", nargs="?", help="Path to the document to critique.")
-    parser.add_argument(
-        "--input-dir",
-        dest="input_dir",
-        help="Directory containing documents to aggregate for critique.",
-    )
-    parser.add_argument(
-        "--include",
-        dest="include",
-        help=(
-            "Comma-separated glob patterns to include (default sourced from "
-            "configuration critique.directory_input.include)."
-        ),
-    )
-    parser.add_argument(
-        "--exclude",
-        dest="exclude",
-        help=(
-            "Comma-separated glob patterns to exclude (default sourced from "
-            "configuration critique.directory_input.exclude)."
-        ),
-    )
-    parser.add_argument(
-        "--order",
-        dest="order",
-        help="Comma-separated list of relative paths defining explicit aggregation order.",
-    )
-    parser.add_argument(
-        "--order-from",
-        dest="order_from",
-        help="Path to a text or JSON file describing the explicit file order.",
-    )
-    parser.add_argument(
-        "--max-files",
-        dest="max_files",
-        type=int,
-        help=(
-            "Maximum number of files to aggregate (default from configuration "
-            "critique.directory_input.max_files)."
-        ),
-    )
-    parser.add_argument(
-        "--max-chars",
-        dest="max_chars",
-        type=int,
-        help=(
-            "Maximum total characters to read across all files (default from "
-            "configuration critique.directory_input.max_chars)."
-        ),
-    )
-    parser.add_argument(
-        "--section-separator",
-        dest="section_separator",
-        help=(
-            "String inserted between aggregated sections (default from "
-            "configuration critique.directory_input.section_separator)."
-        ),
-    )
-    parser.add_argument(
-        "--label-sections",
-        dest="label_sections",
-        action="store_true",
-        help=(
-            "Prefix each aggregated file with a heading label (default from "
-            "configuration critique.directory_input.label_sections)."
-        ),
-    )
-    parser.add_argument(
-        "--no-label-sections",
-        dest="label_sections",
-        action="store_false",
-        help="Disable automatic heading labels for aggregated files.",
-    )
-    parser.add_argument(
-        "--recursive",
-        dest="recursive",
-        action="store_true",
-        help=(
-            "Traverse sub-directories when aggregating directory inputs (default "
-            "from configuration critique.directory_input.recursive)."
-        ),
-    )
-    parser.add_argument(
-        "--no-recursive",
-        dest="recursive",
-        action="store_false",
-        help=(
-            "Disable sub-directory traversal when aggregating directory inputs."
-        ),
-    )
-    parser.add_argument(
-        "--peer-review",
-        "--PR",
-        dest="peer_review",
-        action="store_true",
-        help="Enable peer review enhancements.",
-    )
-    parser.add_argument(
-        "--no-peer-review",
-        dest="peer_review",
-        action="store_false",
-        help="Disable peer review enhancements for this run.",
-    )
-    parser.add_argument(
-        "--scientific",
-        dest="scientific_mode",
-        action="store_true",
-        help="Use scientific methodology agents.",
-    )
-    parser.add_argument(
-        "--no-scientific",
-        dest="scientific_mode",
-        action="store_false",
-        help="Disable scientific methodology for this run.",
-    )
-    parser.add_argument(
-        "--output-dir",
-        dest="output_dir",
-        help="Directory where critique reports should be stored.",
-    )
-    parser.add_argument(
-        "--preflight-extract",
-        dest="preflight_extract",
-        action="store_true",
-        help=(
-            "Enable the preflight point extraction stage. Defaults follow "
-            "preflight.extract.enabled in config.json."
-        ),
-    )
-    parser.add_argument(
-        "--no-preflight-extract",
-        dest="preflight_extract",
-        action="store_false",
-        help="Disable preflight point extraction for this run.",
-    )
-    parser.add_argument(
-        "--preflight-build-queries",
-        dest="preflight_build_queries",
-        action="store_true",
-        help=(
-            "Enable the preflight query-planning stage. Defaults follow "
-            "preflight.queries.enabled in config.json."
-        ),
-    )
-    parser.add_argument(
-        "--no-preflight-build-queries",
-        dest="preflight_build_queries",
-        action="store_false",
-        help="Disable preflight query planning for this run.",
-    )
-    parser.add_argument(
-        "--points-out",
-        dest="points_out",
-        help=(
-            "Path for writing extracted points JSON. Relative paths are "
-            "resolved inside the output directory. Defaults follow "
-            "preflight.extract.artifact_path."
-        ),
-    )
-    parser.add_argument(
-        "--queries-out",
-        dest="queries_out",
-        help=(
-            "Path for writing query plan JSON. Relative paths resolve inside "
-            "the output directory. Defaults follow preflight.queries.artifact_path."
-        ),
-    )
-    parser.add_argument(
-        "--max-points",
-        dest="max_points",
-        type=int,
-        help=(
-            "Override the maximum number of extracted points. Defaults follow "
-            "preflight.extract.max_points."
-        ),
-    )
-    parser.add_argument(
-        "--max-queries",
-        dest="max_queries",
-        type=int,
-        help=(
-            "Override the maximum number of generated queries. Defaults follow "
-            "preflight.queries.max_queries."
-        ),
-    )
-    parser.add_argument(
-        "--remember-output",
-        action="store_true",
-        help="Persist the provided output directory as the default.",
-    )
-    parser.add_argument(
-        "--config",
-        dest="config",
-        help="Path to the configuration JSON file to load.",
-    )
+    parser.add_argument("--input-dir", dest="input_dir", help="Directory containing documents to aggregate for critique.")
+    parser.add_argument("--include", dest="include", help="Comma-separated globs to include.")
+    parser.add_argument("--exclude", dest="exclude", help="Comma-separated globs to exclude.")
+    parser.add_argument("--order", dest="order", help="Comma-separated list of relative paths defining explicit order.")
+    parser.add_argument("--order-from", dest="order_from", help="Path to a text or JSON file describing explicit order.")
+    parser.add_argument("--max-files", dest="max_files", type=int, help="Maximum number of files to aggregate.")
+    parser.add_argument("--max-chars", dest="max_chars", type=int, help="Maximum total characters to read.")
+    parser.add_argument("--section-separator", dest="section_separator", help="Separator inserted between aggregated sections.")
+    parser.add_argument("--label-sections", dest="label_sections", action="store_true", help="Prefix each aggregated file with a heading label.")
+    parser.add_argument("--no-label-sections", dest="label_sections", action="store_false", help="Disable automatic heading labels for aggregated files.")
+    parser.add_argument("--recursive", dest="recursive", action="store_true", help="Traverse sub-directories when aggregating directory inputs.")
+    parser.add_argument("--no-recursive", dest="recursive", action="store_false", help="Disable sub-directory traversal.")
+    parser.add_argument("--peer-review", "--PR", dest="peer_review", action="store_true", help="Enable peer review enhancements.")
+    parser.add_argument("--no-peer-review", dest="peer_review", action="store_false", help="Disable peer review enhancements for this run.")
+    parser.add_argument("--scientific", dest="scientific_mode", action="store_true", help="Use scientific methodology agents.")
+    parser.add_argument("--no-scientific", dest="scientific_mode", action="store_false", help="Disable scientific methodology for this run.")
+    parser.add_argument("--output-dir", dest="output_dir", help="Directory where critique reports should be stored.")
+    parser.add_argument("--preflight-extract", dest="preflight_extract", action="store_true", help="Enable the preflight point extraction stage.")
+    parser.add_argument("--no-preflight-extract", dest="preflight_extract", action="store_false", help="Disable preflight point extraction for this run.")
+    parser.add_argument("--preflight-build-queries", dest="preflight_build_queries", action="store_true", help="Enable the preflight query-planning stage.")
+    parser.add_argument("--no-preflight-build-queries", dest="preflight_build_queries", action="store_false", help="Disable preflight query planning for this run.")
+    parser.add_argument("--points-out", dest="points_out", help="Path for writing extracted points JSON (relative to output dir if relative).")
+    parser.add_argument("--queries-out", dest="queries_out", help="Path for writing query plan JSON (relative to output dir if relative).")
+    parser.add_argument("--max-points", dest="max_points", type=int, help="Override maximum number of extracted points.")
+    parser.add_argument("--max-queries", dest="max_queries", type=int, help="Override maximum number of generated queries.")
+    parser.add_argument("--remember-output", action="store_true", help="Persist the provided output directory as the default.")
+
     interactive_group = parser.add_mutually_exclusive_group()
-    interactive_group.add_argument(
-        "--interactive",
-        dest="interactive_mode",
-        action="store_true",
-        help="Force the interactive navigation experience.",
-    )
-    interactive_group.add_argument(
-        "--no-interactive",
-        dest="interactive_mode",
-        action="store_false",
-        help="Run without interactive prompts.",
-    )
+    interactive_group.add_argument("--interactive", dest="interactive_mode", action="store_true", help="Force the interactive navigation experience.")
+    interactive_group.add_argument("--no-interactive", dest="interactive_mode", action="store_false", help="Run without interactive prompts.")
+
     parser.set_defaults(
         peer_review=None,
         scientific_mode=None,
@@ -292,30 +133,14 @@ def build_argument_parser() -> argparse.ArgumentParser:
         max_points=None,
         max_queries=None,
     )
-=======
-# Make main synchronous
-def main():
-    # --- Argument Parsing ---
-    parser = argparse.ArgumentParser(description="Run the Critique Council. Pipelines ingest only from INPUT/ by design.")
-    parser.add_argument(
-        "input_path",
-        nargs="?",
-        default="INPUT/",
-        help="Path under INPUT/ or the INPUT/ directory itself (default). Pipelines only ingest from INPUT/."
-    )
-    parser.add_argument("--ingest-batch", action="store_true",
-                        help="Concatenate all files in INPUT/ (recursive) into one combined input.")
-    parser.add_argument("--PR", "--peer-review", action="store_true",
-                        help="Enable Peer Review mode, enhancing personas with SME perspective.")
-    parser.add_argument("--scientific", action="store_true",
-                        help="Use scientific methodology agents instead of philosophical agents.")
-    # Add LaTeX-related arguments
->>>>>>> 7f5694d (Add comprehensive test scripts for LaTeX configuration, content extraction, and vector store functionality)
+
+    # LaTeX-related arguments
     parser = add_latex_arguments(parser)
     return parser
 
 
 def load_config(path: Path) -> Dict[str, Any]:
+    """Load configuration from JSON file."""
     logger = logging.getLogger(__name__)
     try:
         with path.open("r", encoding="utf-8") as handle:
@@ -327,9 +152,7 @@ def load_config(path: Path) -> Dict[str, Any]:
         raise
     except OSError as exc:
         logger.error("Failed to read configuration '%s': %s", path, exc)
-        raise ConfigLoadError(
-            f"Configuration file '{path}' could not be read: {exc}"
-        ) from exc
+        raise ConfigLoadError(f"Configuration file '{path}' could not be read: {exc}") from exc
 
 
 def extract_directory_defaults(
@@ -341,30 +164,13 @@ def extract_directory_defaults(
     """Build directory input defaults from the loaded configuration mapping.
 
     Args:
-        config: Parsed configuration dictionary loaded from ``config.json`` or a
-            compatible mapping structure.
-        section: Top-level configuration section containing the directory input
-            settings. Defaults to ``"critique"`` which matches the existing CLI
-            configuration layout.
-        override_key: Optional identifier selecting entries within the
-            ``directory_input_overrides`` mapping. When ``None`` the function
-            falls back to an override keyed by ``section`` if present.
+        config: Parsed configuration dictionary loaded from config.json.
+        section: Top-level configuration section.
+        override_key: Optional identifier selecting entries within directory_input_overrides.
 
     Returns:
-        Instance of :class:`DirectoryInputDefaults` populated with values from
-        ``config`` when present, otherwise falling back to baked-in defaults and
-        any applicable overrides.
-
-    Raises:
-        None.
-
-    Side Effects:
-        None.
-
-    Timeout:
-        Not applicable; computation is purely in-memory.
+        DirectoryInputDefaults instance derived from config with any overrides applied.
     """
-
     section_mapping = config.get(section, {})
     if not isinstance(section_mapping, Mapping):
         return DirectoryInputDefaults()
@@ -402,30 +208,7 @@ def _compose_preflight_gateway_config(
     *,
     provider: str,
 ) -> Optional[Dict[str, Any]]:
-    """Merge resolved provider credentials with preflight overrides.
-
-    Args:
-        module_config: Fully resolved configuration produced by
-            :class:`ModuleConfigBuilder` containing provider API keys.
-        preflight_section: Mapping from ``config.json`` under the ``preflight``
-            key that may include provider overrides and timeout settings.
-        provider: Normalised provider name selected for the preflight stages.
-
-    Returns:
-        Mapping containing the merged configuration suitable for the
-        preflight gateways or ``None`` when no configuration could be
-        constructed.
-
-    Raises:
-        None. Unexpected structures simply result in a ``None`` return value.
-
-    Side Effects:
-        None.
-
-    Timeout:
-        Not applicable; execution is purely CPU-bound.
-    """
-
+    """Merge resolved provider credentials with preflight overrides for gateways."""
     provider_key = provider.lower()
     api_section = module_config.get("api", {})
     provider_config: Dict[str, Any] = {}
@@ -471,27 +254,7 @@ def _initialise_preflight_orchestrator(
     config_builder: ModuleConfigBuilder,
     defaults: PreflightCliDefaults,
 ) -> Optional[PreflightOrchestrator]:
-    """Construct the preflight orchestrator when configuration permits.
-
-    Args:
-        base_config: Raw mapping loaded from ``config.json``.
-        config_builder: Builder responsible for resolving provider credentials.
-        defaults: CLI defaults derived from ``base_config``.
-
-    Returns:
-        Instantiated :class:`PreflightOrchestrator` or ``None`` when
-        configuration is incomplete.
-
-    Raises:
-        None. Any configuration errors are logged and result in ``None``.
-
-    Side Effects:
-        Logs debug information describing why initialisation failed.
-
-    Timeout:
-        Not applicable.
-    """
-
+    """Construct the preflight orchestrator when configuration permits."""
     logger = logging.getLogger(__name__)
     preflight_section = base_config.get("preflight")
     if not isinstance(preflight_section, Mapping):
@@ -523,45 +286,20 @@ def _initialise_preflight_orchestrator(
     try:
         extraction_gateway = OpenAIPointExtractorGateway(config=gateway_config)
         query_gateway = OpenAIQueryBuilderGateway(config=gateway_config)
-    except Exception as exc:  # noqa: BLE001 - propagate failure details via logs
+    except Exception as exc:  # noqa: BLE001
         logger.error("Failed to configure preflight gateways: %s", exc)
         return None
 
-    extraction_service = ExtractionService(
-        extraction_gateway,
-        default_max_points=defaults.max_points,
-    )
-    query_service = QueryBuildingService(
-        query_gateway,
-        default_max_queries=defaults.max_queries,
-    )
+    extraction_service = ExtractionService(extraction_gateway, default_max_points=defaults.max_points)
+    query_service = QueryBuildingService(query_gateway, default_max_queries=defaults.max_queries)
     return PreflightOrchestrator(extraction_service, query_service)
 
 
 def determine_config_path(args: argparse.Namespace, settings_service: UserSettingsService) -> Path:
     """Resolve the JSON configuration path used for CLI execution.
 
-    Args:
-        args: Parsed CLI arguments that may include a ``--config`` override.
-        settings_service: Service providing persisted user preferences that can
-            store a configuration path from prior runs.
-
-    Returns:
-        Path pointing to the JSON configuration file. YAML paths are ignored in
-        favour of the project default to ensure compatibility with the JSON
-        loader used by the CLI.
-
-    Raises:
-        None.
-
-    Side Effects:
-        Logs when YAML paths are supplied so operators understand the fallback
-        behaviour.
-
-    Timeout:
-        Not applicable; only inexpensive path manipulations occur.
+    YAML paths are ignored to ensure compatibility with the JSON loader used by the CLI.
     """
-
     logger = logging.getLogger(__name__)
 
     def _normalise(candidate: Path | None) -> Path | None:
@@ -605,15 +343,63 @@ class _EphemeralSettingsRepository:
 
 
 def should_run_interactive(args: argparse.Namespace) -> bool:
+    """Return True if the interactive experience should be used."""
     interactive_mode = getattr(args, "interactive_mode", None)
     if interactive_mode is True:
         return True
     if interactive_mode is False:
         return False
-    return getattr(args, "input_file", None) is None
+    # Non-interactive when a directory is provided via CLI, even if no input_file is given
+    provided_file = getattr(args, "input_file", None)
+    provided_dir = getattr(args, "input_dir", None)
+    return provided_file is None and provided_dir is None
+
+
+def _enforce_input_only_and_batch_if_needed(args: argparse.Namespace) -> None:
+    """Enforce that ingestion only uses INPUT/ and supports arbitrary number of files.
+
+    Behaviour:
+    - If --input-dir is provided, it must equal the project INPUT/ directory.
+    - If an input_file is provided, it must be located under INPUT/.
+    - If neither is provided, batch-ingest everything under INPUT/ into a temp file,
+      and set args.input_file to that generated path.
+    """
+    base_dir = Path.cwd()
+    input_dir_path = (base_dir / "INPUT").resolve()
+
+    def _under(p: Path) -> bool:
+        try:
+            rp = p.resolve()
+            return (input_dir_path == rp) or (input_dir_path in rp.parents)
+        except Exception:
+            return False
+
+    provided_dir = getattr(args, "input_dir", None)
+    if provided_dir:
+        provided_dir_path = Path(provided_dir).expanduser().resolve()
+        if provided_dir_path != input_dir_path:
+            print(f"Error: Pipelines ingest only from {input_dir_path}. Provided directory '{provided_dir_path}' is not allowed.")
+            sys.exit(2)
+
+    provided_file = getattr(args, "input_file", None)
+    if provided_file:
+        provided_file_path = Path(provided_file).expanduser().resolve()
+        if not _under(provided_file_path):
+            print(f"Error: Pipelines ingest only from {input_dir_path}. Provided file '{provided_file_path}' is not under INPUT/.")
+            sys.exit(2)
+
+    if not provided_dir and not provided_file:
+        files = find_all_input_files(base_dir=str(base_dir), input_dir_name="INPUT", recursive=True)
+        if not files:
+            print(f"Error: No input files found under {input_dir_path}")
+            sys.exit(2)
+        combined = concatenate_inputs(files)
+        temp_path = materialize_concatenation_to_temp(combined)
+        setattr(args, "input_file", temp_path)
 
 
 def main() -> None:
+    """CLI entrypoint."""
     parser = build_argument_parser()
     args = parser.parse_args()
 
@@ -621,129 +407,11 @@ def main() -> None:
     logger = logging.getLogger(__name__)
     load_dotenv()
 
-<<<<<<< HEAD
+    # INPUT-only enforcement (supports arbitrary number of files via batch)
+    _enforce_input_only_and_batch_if_needed(args)
+
+    # Settings repository
     repository = JsonFileSettingsRepository()
-=======
-    # --- Prepare Module Config ---
-    # Structure the configuration to include all available providers
-    module_config = {
-        'api': {
-            'providers': {},  # Provider configuration container
-            'primary_provider': app_config.get('api', {}).get('primary_provider', 'gemini'),
-        },
-        'reasoning_tree': app_config.get('reasoning_tree', {}),
-        'council_orchestrator': app_config.get('council_orchestrator', {})
-    }
-    
-    # Add Gemini configuration if available
-    if 'gemini' in app_config.get('api', {}):
-        module_config['api']['providers']['gemini'] = {
-            **app_config.get('api', {}).get('gemini', {}),
-            'resolved_key': os.getenv('GEMINI_API_KEY'),
-        }
-        # Also add at top level for backward compatibility with older provider modules
-        module_config['api']['gemini'] = module_config['api']['providers']['gemini']
-        
-    # Add DeepSeek configuration if available
-    if 'deepseek' in app_config.get('api', {}) or os.getenv('DEEPSEEK_API_KEY'):
-        module_config['api']['providers']['deepseek'] = {
-            **app_config.get('api', {}).get('deepseek', {}),
-            'api_key': os.getenv('DEEPSEEK_API_KEY'),
-        }
-        # Also add at top level for backward compatibility with older provider modules
-        module_config['api']['deepseek'] = module_config['api']['providers']['deepseek']
-        
-    # Add OpenAI configuration if available
-    if 'openai' in app_config.get('api', {}) or os.getenv('OPENAI_API_KEY'):
-        module_config['api']['providers']['openai'] = {
-            **app_config.get('api', {}).get('openai', {}),
-            'resolved_key': os.getenv('OPENAI_API_KEY'),
-        }
-        # Also add at top level for backward compatibility with older provider modules
-        module_config['api']['openai'] = module_config['api']['providers']['openai']
-    
-    # For backward compatibility with older components
-    primary_provider = module_config['api']['primary_provider']
-    if primary_provider in module_config['api']['providers'] and 'resolved_key' in module_config['api']['providers'][primary_provider]:
-        module_config['api']['resolved_key'] = module_config['api']['providers'][primary_provider]['resolved_key']
-    
-    root_logger.info("Module configuration prepared.")
-    # -------------------------
-
-    # --- Validate Primary Provider API Key ---
-    primary_provider = module_config['api']['primary_provider']
-    # Check both locations (providers nested and direct)
-    api_key_missing = (
-        (primary_provider not in module_config['api']['providers'] or 
-         not module_config['api']['providers'][primary_provider].get('resolved_key', module_config['api']['providers'][primary_provider].get('api_key')))
-        and
-        (primary_provider not in module_config['api'] or 
-         not module_config['api'][primary_provider].get('resolved_key', module_config['api'][primary_provider].get('api_key')))
-    )
-    
-    if api_key_missing:
-        error_msg = f"Primary provider '{primary_provider}' API key not found in .env file or environment. Cannot proceed."
-        print(f"Error: {error_msg}")
-        root_logger.error(error_msg)
-        return
-    # -------------------------
-
-    # Resolve ingestion strictly from INPUT/ and support arbitrary number of files
-    base_dir = os.getcwd()
-    input_dir = os.path.abspath(os.path.join(base_dir, "INPUT"))
-    arg_path = args.input_path.strip() if getattr(args, "input_path", None) else "INPUT/"
-    arg_abs = os.path.abspath(arg_path)
-
-    # Helper to ensure path is under INPUT/
-    def _is_under_input(path_abs: str) -> bool:
-        try:
-            return os.path.commonpath([path_abs, input_dir]) == input_dir
-        except Exception:
-            return False
-
-    if os.path.isdir(arg_abs):
-        # Enforce INPUT/ directory
-        if os.path.normpath(arg_abs) != os.path.normpath(input_dir):
-            print(f"Error: Pipelines ingest only from {input_dir}. Provided directory '{arg_abs}' is not allowed.")
-            root_logger.error("Disallowed input directory outside INPUT/")
-            return
-        files = find_all_input_files(base_dir=base_dir, input_dir_name="INPUT", recursive=True)
-        if not files:
-            print(f"Error: No input files found under {input_dir}")
-            root_logger.error("No input files found under INPUT/")
-            return
-        print(f"INGEST: Found {len(files)} input files under {input_dir}")
-        combined = concatenate_inputs(files)
-        input_file = materialize_concatenation_to_temp(combined)
-    elif os.path.isfile(arg_abs):
-        # Enforce the file is within INPUT/
-        if not _is_under_input(arg_abs):
-            print(f"Error: Pipelines ingest only from {input_dir}. Provided file '{arg_abs}' is not under INPUT/.")
-            root_logger.error("Disallowed input file outside INPUT/")
-            return
-        if args.ingest_batch:
-            files = find_all_input_files(base_dir=base_dir, input_dir_name="INPUT", recursive=True)
-            print(f"INGEST: --ingest-batch enabled; concatenating {len(files)} files from {input_dir}")
-            combined = concatenate_inputs(files)
-            input_file = materialize_concatenation_to_temp(combined)
-        else:
-            input_file = arg_abs
-    else:
-        # Default: batch ingest from INPUT/
-        files = find_all_input_files(base_dir=base_dir, input_dir_name="INPUT", recursive=True)
-        if not files:
-            print(f"Error: No input files found under {input_dir}")
-            root_logger.error("No input files found under INPUT/")
-            return
-        print(f"INGEST: Found {len(files)} input files under {input_dir}")
-        combined = concatenate_inputs(files)
-        input_file = materialize_concatenation_to_temp(combined)
-
-    peer_review_mode = args.PR # or args.peer_review
-    scientific_mode = args.scientific
-    
-    root_logger.info(f"Initiating critique for: {input_file} (Peer Review Mode: {peer_review_mode}, Scientific Mode: {scientific_mode})")
->>>>>>> 7f5694d (Add comprehensive test scripts for LaTeX configuration, content extraction, and vector store functionality)
     try:
         settings_service = UserSettingsService(repository)
     except SettingsPersistenceError as exc:
@@ -751,6 +419,7 @@ def main() -> None:
         print("Warning: could not load saved settings. Using in-memory defaults for this session.")
         settings_service = UserSettingsService(_EphemeralSettingsRepository())
 
+    # Load configuration
     config_path = determine_config_path(args, settings_service)
     try:
         base_config = load_config(config_path)
@@ -763,6 +432,7 @@ def main() -> None:
         print(f"Error: {exc}")
         sys.exit(1)
 
+    # Build orchestrators and services
     config_builder = ModuleConfigBuilder(base_config, settings_service, os.getenv)
     preflight_defaults = load_preflight_defaults(base_config)
     preflight_orchestrator = _initialise_preflight_orchestrator(
@@ -770,6 +440,7 @@ def main() -> None:
         config_builder,
         preflight_defaults,
     )
+
     repository_factory = FileSystemContentRepositoryFactory()
     critique_runner = CritiqueRunner(
         settings_service,
@@ -778,6 +449,7 @@ def main() -> None:
         repository_factory,
         preflight_orchestrator=preflight_orchestrator,
     )
+
     directory_defaults = extract_directory_defaults(base_config)
     cli_app = CliApp(
         settings_service,

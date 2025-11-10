@@ -40,8 +40,18 @@ class FileSystemContentRepositoryFactory(ContentRepositoryFactory):
     encoding: str = "utf-8"
 
     def create_for_file(self, request: FileInputRequest) -> ContentRepository:
-        """Instantiate a repository for single-file inputs."""
-
+        """Instantiate a repository for single-file inputs.
+    
+        Defensive hardening:
+        - If the supplied path resolves to a directory, coerce to a
+          DirectoryContentRepository so the pipeline can ingest multiple files.
+        """
+        resolved = request.path.expanduser().resolve()
+        if resolved.exists() and resolved.is_dir():
+            # Coerce to directory repository for robustness
+            from .directory_repository import DirectoryContentRepository  # local import to avoid module import cycles
+            return DirectoryContentRepository(DirectoryInputRequest(root=resolved), encoding=self.encoding)
+    
         return SingleFileContentRepository(request, encoding=self.encoding)
 
     def create_for_directory(self, request: DirectoryInputRequest) -> ContentRepository:

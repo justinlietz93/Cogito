@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional
 
 from ...domain.preflight.models import BuiltQuery, QueryPlan
 from ...research_apis import ResearchAPIOrchestrator, ResearchResult
+from .domain_router import DomainRouter
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,8 @@ class ResearchQueryExecutor:
         self.config = config or {}
         self.default_max_results = self.config.get('max_results_per_query', 10)
         self.parallel_execution = self.config.get('parallel_execution', True)
+        # Domain-aware routing: choose providers per query based on context
+        self.router = DomainRouter()
     
     def execute_query_plan(
         self,
@@ -152,11 +155,19 @@ class ResearchQueryExecutor:
                         result.failed_queries += 1
                         continue
                 
-                # Execute the query across research sources
+                # Execute the query across research sources (domain-aware if sources not provided)
+                enabled = self.orchestrator.get_available_sources()
+                sources_for_query = sources or self.router.select_sources(query.text, enabled)
+                logger.info(
+                    "Routing query %s to sources: %s",
+                    query.id,
+                    ", ".join(sources_for_query) if sources_for_query else "<none>"
+                )
+
                 search_results = self.orchestrator.search_all(
                     query=query.text,
                     max_results_per_source=max_results,
-                    sources=sources,
+                    sources=sources_for_query,
                     parallel=self.parallel_execution
                 )
                 
@@ -231,10 +242,16 @@ class ResearchQueryExecutor:
         
         try:
             logger.info("Executing query: %s", query.text)
+            enabled = self.orchestrator.get_available_sources()
+            sources_for_query = sources or self.router.select_sources(query.text, enabled)
+            logger.info(
+                "Routing single query to sources: %s",
+                ", ".join(sources_for_query) if sources_for_query else "<none>"
+            )
             results = self.orchestrator.search_all(
                 query=query.text,
                 max_results_per_source=max_res,
-                sources=sources,
+                sources=sources_for_query,
                 parallel=self.parallel_execution
             )
             logger.info("Query returned %d results", len(results))

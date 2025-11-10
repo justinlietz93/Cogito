@@ -11,7 +11,7 @@ This script demonstrates:
 
 import os
 import sys
-import yaml
+import json
 import time
 import logging
 import argparse
@@ -45,11 +45,11 @@ SAMPLE_POINTS = [
 ]
 
 def load_config() -> Dict[str, Any]:
-    """Load configuration from config.yaml file."""
-    config_path = 'config.yaml'
+    """Load configuration from config.json file."""
+    config_path = 'config.json'
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
+            config = json.load(f)
         return config
     except Exception as e:
         logger.warning(f"Failed to load config from {config_path}: {e}")
@@ -63,7 +63,7 @@ def load_config() -> Dict[str, Any]:
                 'max_references_per_point': 3,
                 'default_sort_by': 'relevance',
                 'default_sort_order': 'descending',
-                'update_bibliography': True
+                'update_bibliography': True,
             }
         }
 

@@ -167,7 +167,32 @@ def call_openai_with_retry(
         or os.getenv('OPENAI_DEFAULT_MODEL')
         or 'gpt-4o-mini'
     )
-    api_key = openai_config.get('resolved_key') or os.getenv('OPENAI_API_KEY')
+    # Resolve API key from several sources, in order of precedence:
+    # 1) Explicit resolved_key in provided config
+    # 2) Environment variable
+    # 3) Common config keys (api_key/key) inside provided config
+    # 4) Global config.json via config_loader (back-compat and centralisation)
+    api_key = (
+        openai_config.get('resolved_key')
+        or os.getenv('OPENAI_API_KEY')
+        or openai_config.get('api_key')
+        or openai_config.get('key')
+    )
+    if not api_key:
+        try:
+            # Local import to avoid import cycles at module import time
+            from src.config_loader import config_loader as _cfg_loader  # type: ignore
+            _api = _cfg_loader.get_api_config() or {}
+            _openai = _api.get('openai', {}) if isinstance(_api, dict) else {}
+            api_key = (
+                api_key
+                or _openai.get('resolved_key')
+                or _openai.get('api_key')
+                or _openai.get('key')
+            )
+        except Exception:
+            # Swallow only lookup errors here; explicit failure raised below if still missing
+            pass
     
     if not api_key:
         raise ModelCallError("OpenAI API key not found in configuration or environment")

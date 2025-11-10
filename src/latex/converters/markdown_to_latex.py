@@ -42,7 +42,10 @@ class MarkdownToLatexConverter:
         # Special handling for peer review credentials sections
         try:
             print("Processing peer review credentials")
-            latex_content = self._process_peer_review_credentials(latex_content)
+            lowered = latex_content.lstrip().lower()
+            # Skip credentials processing when the document is an error stub from the peer review generator
+            if not (lowered.startswith('# error') or 'scientific peer review formatting failed' in lowered):
+                latex_content = self._process_peer_review_credentials(latex_content)
         except Exception as e:
             print(f"Error in _process_peer_review_credentials: {e}")
             # Continue with original content
@@ -311,52 +314,63 @@ class MarkdownToLatexConverter:
     def _process_peer_review_credentials(self, content: str) -> str:
         """
         Process peer review credentials sections at the top of peer review documents.
-        
-        This method handles formats like:
-        
-        Dr. Jonathan Smith, Ph.D.  
-        Department of Computer Science, Stanford University  
-        Area of Expertise: Topological Data Analysis, Graph Theory, and Computational Topology
-        
+
+        Robustness:
+        - Only attempts detection if the document likely contains a peer review section.
+        - Uses guarded look-ahead to avoid out-of-range indexing.
+        - Returns original content unchanged when no credentials block is detected.
+
         Args:
             content: The content to process.
-            
+
         Returns:
-            The processed content with peer review credentials formatted.
+            The processed content with peer review credentials formatted, or the original content.
         """
-        # Check if this is likely a peer review document
-        if "Peer Review" not in content and "peer review" not in content:
+        # Quick signature check; avoid work if it clearly isn't a peer review document
+        lowered = content.lower()
+        if ("peer review" not in lowered) and ("peer-review" not in lowered):
             return content
-            
-        # Extract the title and credentials section
+
         lines = content.split('\n')
         in_credentials = False
         credentials_start = -1
         credentials_end = -1
-        
+
         for i, line in enumerate(lines):
-            # After the title, look for credentials section (typically after a blank line)
-            if line.strip() == '' and i > 0 and credentials_start == -1:
-                if i+1 < len(lines) and 'Dr.' in lines[i+1] or 'Ph.D.' in lines[i+1] or 'Professor' in lines[i+1]:
-                    credentials_start = i + 1
-                    in_credentials = True
-            # End of credentials when we hit another blank line or a divider
-            elif in_credentials and (line.strip() == '' or '─' in line or '---' in line):
+            # Detect a plausible credentials block beginning after a blank line.
+            if (line.strip() == '') and i > 0 and credentials_start == -1:
+                if (i + 1) < len(lines):
+                    next_line = lines[i + 1]
+                    # Heuristic tokens frequently present in credentials
+                    if any(token in next_line for token in ('Dr.', 'Ph.D.', 'Professor', 'Department', 'University')):
+                        credentials_start = i + 1
+                        in_credentials = True
+                        continue
+
+            # Credentials block ends on blank line or a visual divider
+            if in_credentials and (line.strip() == '' or '─' in line or '---' in line):
                 credentials_end = i
                 break
-        
-        # If we found a credentials section, format it properly
-        if credentials_start != -1 and credentials_end != -1:
+
+        # If a block was detected, format it as an author section centered at top
+        if credentials_start != -1 and credentials_end != -1 and credentials_end > credentials_start:
             credentials_lines = lines[credentials_start:credentials_end]
-            credentials_text = '\n'.join(credentials_lines)
-            
-            # Format as LaTeX author section
-            formatted_credentials = f"\\begin{{center}}\n\\large\n{credentials_text}\n\\end{{center}}\n\\vspace{{1em}}\n"
-            
-            # Replace the original credentials section
-            original_section = '\n'.join(lines[credentials_start-1:credentials_end+1])
-            content = content.replace(original_section, formatted_credentials)
-        
+            credentials_text = '\n'.join(credentials_lines).strip()
+
+            if credentials_text:
+                formatted_credentials = (
+                    "\\begin{center}\n"
+                    "\\large\n"
+                    f"{credentials_text}\n"
+                    "\\end{center}\n"
+                    "\\vspace{1em}\n"
+                )
+
+                # Replace the original block including the leading blank separator if present
+                replace_start = max(credentials_start - 1, 0)
+                original_section = '\n'.join(lines[replace_start:credentials_end + 1])
+                content = content.replace(original_section, formatted_credentials, 1)
+
         return content
     
     def _convert_blockquotes(self, content: str) -> str:

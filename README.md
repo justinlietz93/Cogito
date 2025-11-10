@@ -317,7 +317,7 @@ The semantic search capabilities work as follows:
 - **Vector Database**: Papers are converted to vector embeddings (using OpenAI embeddings when available, with local fallback)
 - **Semantic Matching**: Search uses cosine similarity between content vectors and paper vectors
 - **Dynamic Discovery**: New papers are discovered during research and automatically added to the local vector database
-- **Flexible Configuration**: Can work entirely offline with local embedding generation if API keys aren't available 
+- **Flexible Configuration**: Can work entirely offline with local embedding generation if API keys aren't available
 
 ## How to Use Cogito
 
@@ -421,12 +421,14 @@ Workarounds for these issues are documented in the [Troubleshooting Guide](docs/
 We're actively developing the following enhancements for upcoming releases:
 
 ### Expanding Research Capabilities
+
 - **Additional Scientific Databases**: Integration with PubMed, IEEE Xplore, and other scholarly repositories
 - **Improved Mathematical Reasoning**: Enhanced capabilities for complex mathematical derivation and proof
 - **Research Visualization Tools**: Interactive visualizations of research connections and knowledge graphs
 - **Custom Knowledge Bases**: Support for organization-specific or private research repositories
 
 ### Architecture Improvements
+
 - **Full Neuroca Integration**: Complete migration from Agno to the Neuroca cognitive architecture
 - **Enhanced RCoT Implementation**: Further development of recursive reasoning capabilities
 - **Distributed Processing**: Support for handling very large research projects
@@ -434,6 +436,7 @@ We're actively developing the following enhancements for upcoming releases:
 - **API Interface**: Programmatic access for integration with other research tools
 
 ### Enhanced Output Options
+
 - **Interactive Document Formats**: HTML outputs with interactive elements and visualizations
 - **Presentation Generation**: Creation of research presentations and posters
 - **Domain-Specific Templates**: Specialized formats for different academic fields and journals
@@ -521,7 +524,7 @@ seed downstream review workflows or to inspect the extracted context manually.
 - [Example Outputs](examples/)
 - [Configuration Guide](docs/configuration.md)
 - [API Reference](docs/api_reference.md)
-- [Cogito Knowledge Base](https://notebooklm.google.com/notebook/55d7ef7a-e0e7-4e83-99de-2ee0106c822e) - Send an email to jlietz93@gmail.com to gain private access to the NotebookLM knowledgebase where you can ask questions directly about the repository and technologies
+- [Cogito Knowledge Base](https://notebooklm.google.com/notebook/55d7ef7a-e0e7-4e83-99de-2ee0106c822e) - Send an email to <jlietz93@gmail.com> to gain private access to the NotebookLM knowledgebase where you can ask questions directly about the repository and technologies
 
 ## License
 

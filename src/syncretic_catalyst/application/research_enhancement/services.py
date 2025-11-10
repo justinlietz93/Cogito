@@ -13,7 +13,7 @@ from ...domain import (
     ResearchGapAnalysis,
     ResearchPaper,
 )
-from ...prompt_texts import (
+from src.prompt_texts import (
     RESEARCH_ENHANCEMENT_PROMPT_TEMPLATE,
     RESEARCH_ENHANCEMENT_SYSTEM_PROMPT,
     RESEARCH_GAP_ANALYSIS_PROMPT_TEMPLATE,

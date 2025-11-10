@@ -20,7 +20,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Callable, Optional
 
-from ...application.critique.requests import FileInputRequest
+from ...application.critique.requests import FileInputRequest, DirectoryInputRequest
 from ...application.user_settings.services import (
     InvalidPreferenceError,
     SettingsPersistenceError,
@@ -72,20 +72,28 @@ class InteractiveCli:
                 self.output_func("Unrecognised option. Please select a valid menu item.")
 
     def _interactive_run_flow(self) -> None:
-        """Guide the user through selecting files and executing a critique."""
-
+        """Guide the user through selecting a file or a directory and executing a critique."""
+ 
         settings = self.settings_service.get_settings()
         input_path = self._prompt_for_input_path(settings)
         if not input_path:
             return
-
+ 
         output_directory = self._prompt_for_output_directory(settings)
         peer_review = self._prompt_bool("Enable peer review", settings.peer_review_default)
         scientific_mode = self._prompt_bool("Use scientific methodology", settings.scientific_mode_default)
         latex_args = self._prompt_latex_options(output_directory)
-
+ 
+        # Accept either a single file or a directory. Use the appropriate request DTO so the
+        # repository layer aggregates multiple files when a directory is provided.
+        descriptor = (
+            DirectoryInputRequest(root=input_path)
+            if input_path.is_dir()
+            else FileInputRequest(path=input_path)
+        )
+ 
         self.execute_run(
-            FileInputRequest(path=input_path),
+            descriptor,
             output_directory,
             peer_review=peer_review,
             scientific_mode=scientific_mode,

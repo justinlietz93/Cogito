@@ -104,6 +104,9 @@ storage/arxiv_cache/
 *.log
 latex_output/*
 
+# Inputs
+INPUT/*
+
 # VSCode
 .github/instructions
 *.chatmode.md

@@ -118,3 +118,151 @@ def materialize_concatenation_to_temp(content: str, tmp_dir: Optional[str] = Non
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(content)
     return out_path
+
+
+# =========================
+# Centralized INPUT-only enforcement helpers
+# =========================
+from typing import Union  # local import to avoid widening top imports
+from pathlib import Path
+
+
+def resolve_input_root(base_dir: Optional[str] = None, input_dir_name: str = "INPUT") -> str:
+    """
+    Resolve the absolute INPUT/ root from a base directory.
+
+    Purpose:
+    - Provide a single place to compute the canonical INPUT directory path for all pipelines.
+
+    Parameters:
+    - base_dir: Optional base directory. Defaults to current working directory when None.
+    - input_dir_name: Name of the input directory (default: 'INPUT').
+
+    Returns:
+    - Absolute path to the INPUT directory as a string.
+
+    Raises:
+    - None directly. This function only computes a path; existence is not guaranteed.
+
+    Side Effects:
+    - None.
+
+    Timeout/Retry:
+    - Not applicable (pure CPU/path resolution).
+    """
+    base = base_dir or os.getcwd()
+    return os.path.abspath(os.path.join(base, input_dir_name))
+
+
+def is_under_input(
+    path: Union[str, os.PathLike],
+    base_dir: Optional[str] = None,
+    input_dir_name: str = "INPUT",
+) -> bool:
+    """
+    Return True if the given path is equal to or under the INPUT/ root.
+
+    Purpose:
+    - Uniform guard to verify that any provided file/directory remains within INPUT/.
+      Useful for CLIs and internal ingestion points.
+
+    Parameters:
+    - path: File or directory path to validate.
+    - base_dir: Optional base directory used to resolve INPUT/.
+    - input_dir_name: Name of the input directory (default 'INPUT').
+
+    Returns:
+    - True if 'path' is equal to the INPUT root or a descendant; False otherwise.
+
+    Raises:
+    - None. Defensive returns are used on exceptions.
+
+    Side Effects:
+    - None.
+
+    Timeout/Retry:
+    - Not applicable.
+    """
+    try:
+        root = Path(resolve_input_root(base_dir, input_dir_name)).resolve()
+        rp = Path(path).expanduser().resolve()
+        return (root == rp) or (root in rp.parents)
+    except Exception:
+        return False
+
+
+def enforce_input_only(
+    path: Union[str, os.PathLike],
+    base_dir: Optional[str] = None,
+    input_dir_name: str = "INPUT",
+) -> None:
+    """
+    Enforce that 'path' resides under the INPUT/ root (or equals it).
+
+    Purpose:
+    - Raise a clear exception if a pipeline attempts to ingest content from outside INPUT/.
+
+    Parameters:
+    - path: File or directory path to validate.
+    - base_dir: Optional base directory used to resolve INPUT/.
+    - input_dir_name: Name of the input directory (default 'INPUT').
+
+    Returns:
+    - None.
+
+    Raises:
+    - ValueError: If 'path' is not under the INPUT/ root.
+
+    Side Effects:
+    - None.
+
+    Timeout/Retry:
+    - Not applicable.
+    """
+    root = resolve_input_root(base_dir, input_dir_name)
+    if not is_under_input(path, base_dir=base_dir, input_dir_name=input_dir_name):
+        resolved = str(Path(path).expanduser().resolve())
+        raise ValueError(
+            f"Pipelines ingest only from {root}. Provided path '{resolved}' is not under INPUT/."
+        )
+
+
+def batch_ingest_all_to_temp(
+    base_dir: Optional[str] = None,
+    input_dir_name: str = "INPUT",
+    recursive: bool = True,
+    allowed_exts: Optional[List[str]] = None,
+) -> str:
+    """
+    Discover all files under INPUT/, concatenate them with headers, and materialize to INPUT/.combined/.
+
+    Purpose:
+    - Support ingesting an arbitrary number of files by aggregating them into a single temp file.
+      This function centralizes discovery + concatenation + temp materialization.
+
+    Parameters:
+    - base_dir: Optional base directory used to resolve INPUT/.
+    - input_dir_name: The name of the input directory (default 'INPUT').
+    - recursive: Include files from subdirectories when True.
+    - allowed_exts: Optional list of file extensions to include (e.g., ['.md', '.txt']). None = all.
+
+    Returns:
+    - Absolute path to the materialized aggregated temp file under INPUT/.combined/.
+
+    Raises:
+    - FileNotFoundError: If no input files are found under INPUT/.
+    - OSError: If writing the aggregated file fails.
+
+    Side Effects:
+    - Writes a new temp file under INPUT/.combined/.
+
+    Timeout/Retry:
+    - Not applicable in this function. Any downstream I/O timeouts are handled by callers if needed.
+    """
+    files = find_all_input_files(
+        base_dir=base_dir, input_dir_name=input_dir_name, recursive=recursive, allowed_exts=allowed_exts
+    )
+    if not files:
+        raise FileNotFoundError(f"No input files found under {resolve_input_root(base_dir, input_dir_name)}")
+    combined = concatenate_inputs(files)
+    return materialize_concatenation_to_temp(combined)

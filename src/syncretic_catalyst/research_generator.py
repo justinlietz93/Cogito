@@ -1,42 +1,92 @@
-"""CLI entrypoint for the research proposal generation workflow."""
-from __future__ import annotations
+"""Research Proposal Generator CLI
 
-<<<<<<< HEAD
-=======
-This module ingests ONLY from the project INPUT/ directory,
-combines an arbitrary number of files (recursively), and has the AI
-generate a formal academic research proposal from that corpus.
+Purpose:
+- Provide a CLI workflow to generate an academic research proposal from project documents.
+- Enforce ingestion ONLY from the repository INPUT/ directory and support an arbitrary number of files by aggregating them into the project workspace.
+- Materialize the aggregated INPUT/ corpus into project_dir/doc/INPUT_AGGREGATED.md for downstream components (repositories/services) to consume.
+
+External dependencies:
+- CLI (argparse)
+- File system access
+- Providers are configured in higher layers (orchestrator/services) and may depend on environment keys
+
+Fallback semantics:
+- If INPUT/ contains no files, the command exits with error status (policy enforcement).
+- If writing the aggregated file fails, the command exits with error status.
+
+Timeout strategy:
+- This module itself performs local orchestration; network timeouts are handled by provider gateways/services.
 """
 
-import os
-import sys
-from pathlib import Path
-from typing import Dict, List, Optional
->>>>>>> 7f5694d (Add comprehensive test scripts for LaTeX configuration, content extraction, and vector store functionality)
+from __future__ import annotations
+
 import argparse
 from pathlib import Path
-from typing import Sequence
+from typing import Optional, Sequence
 
+# Orchestration and services
 from .ai_clients import AIOrchestrator
 from .application.research_generation import ResearchProposalGenerationService
 from .application.research_generation.exceptions import ProjectDocumentsNotFound
 from .infrastructure.research_generation import FileSystemResearchGenerationRepository
 from .infrastructure.thesis.ai_client import OrchestratorContentGenerator
 
-<<<<<<< HEAD
+# Centralized ingestion utilities (INPUT-only, arbitrary file count)
+from src.input_reader import find_all_input_files, concatenate_inputs
+
 _DEFAULT_MAX_TOKENS = 20_000
-=======
-# Import the existing AI clients correctly
-from src.syncretic_catalyst.ai_clients import Claude37SonnetClient, DeepseekR1Client
-from src.input_reader import find_all_input_files
->>>>>>> 7f5694d (Add comprehensive test scripts for LaTeX configuration, content extraction, and vector store functionality)
+
+
+def _aggregate_input_to_project(project_dir: Path) -> Path:
+    """Aggregate all files from repository INPUT/ (recursive) into project_dir/doc/INPUT_AGGREGATED.md.
+
+    This enforces that pipelines ingest only from INPUT/ and supports an arbitrary number
+    of files via concatenation with file headers. The materialized file lives under the
+    standard doc/ folder to align with repository expectations.
+
+    Args:
+        project_dir: The project workspace directory receiving artefacts and the aggregated INPUT corpus.
+
+    Returns:
+        Path to the materialized aggregated corpus file.
+
+    Raises:
+        FileNotFoundError: If INPUT/ does not exist or contains no files.
+        OSError: If writing the aggregated file fails.
+    """
+    cogito_root = Path(__file__).resolve().parents[2]
+    input_dir = cogito_root / "INPUT"
+    if not input_dir.exists() or not input_dir.is_dir():
+        raise FileNotFoundError(f"INPUT directory does not exist at {input_dir}")
+
+    candidates = find_all_input_files(
+        base_dir=str(cogito_root), input_dir_name="INPUT", recursive=True
+    )
+    if not candidates:
+        raise FileNotFoundError(f"No input files found under {input_dir}")
+
+    combined = concatenate_inputs(candidates)
+
+    doc_dir = project_dir / "doc"
+    doc_dir.mkdir(parents=True, exist_ok=True)
+    out_path = doc_dir / "INPUT_AGGREGATED.md"
+    out_path.write_text(combined, encoding="utf-8")
+    return out_path
 
 
 def build_service(
     project_dir: Path, *, model: str | None = None, default_max_tokens: int = _DEFAULT_MAX_TOKENS
 ) -> tuple[ResearchProposalGenerationService, FileSystemResearchGenerationRepository]:
-    """Compose the generation service and its dependencies."""
+    """Compose the generation service and its dependencies.
 
+    Args:
+        project_dir: Project workspace directory (contains doc/ and receives outputs).
+        model: Optional provider override for the orchestrator.
+        default_max_tokens: Default response token budget used by generator/service.
+
+    Returns:
+        A tuple of (service, repository) ready for proposal generation.
+    """
     orchestrator = AIOrchestrator(model)
     generator = OrchestratorContentGenerator(
         orchestrator, default_max_tokens=default_max_tokens
@@ -51,17 +101,15 @@ def build_service(
     return service, repository
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """Execute the research generation workflow."""
-
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
-        description="Generate an academic research proposal from project documents."
+        description="Generate an academic research proposal (INPUT-only ingestion; arbitrary file count supported)."
     )
     parser.add_argument(
         "--model",
         help=(
-            "Optional provider override. If omitted the configured primary provider "
-            "will be used."
+            "Optional provider override. If omitted the configured primary provider will be used."
         ),
     )
     parser.add_argument(
@@ -76,161 +124,40 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="Optional override for the response token budget.",
     )
+    return parser
 
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Execute the research proposal generation workflow.
+
+    Behaviour:
+    - Aggregates INPUT/ content into project_dir/doc/INPUT_AGGREGATED.md (enforces INPUT-only ingestion).
+    - Composes services/repositories and generates the proposal artefacts.
+    """
+    parser = _build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
 
+    project_dir: Path = args.project_dir
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    # Enforce INPUT-only ingestion and prepare unified corpus
     try:
-<<<<<<< HEAD
-        service, repository = build_service(args.project_dir, model=args.model)
+        aggregated_path = _aggregate_input_to_project(project_dir)
+        print(f"INGEST: Materialized aggregated INPUT corpus to {aggregated_path}")
+    except FileNotFoundError as exc:
+        print(f"Error: {exc}")
+        return 2
     except OSError as exc:
-        print(
-            f"Error: Failed to prepare project directory '{args.project_dir}': {exc}"
-        )
-        return 1
-=======
-        with open(file_path, 'r', encoding='utf-8') as file:
-            return file.read()
-    except Exception as e:
-        print(f"Error reading {file_path}: {e}")
-        return f"[Content from {file_path.name} could not be read]"
+        print(f"Error: Failed to write aggregated INPUT corpus: {exc}")
+        return 2
 
-def get_project_title(doc_folder: Path) -> str:
-    """Extract the project title from the BREAKTHROUGH_BLUEPRINT.md file."""
-    blueprint_path = doc_folder / "BREAKTHROUGH_BLUEPRINT.md"
-    if blueprint_path.exists():
-        content = read_file_content(blueprint_path)
-        lines = content.split('\n')
-        for line in lines:
-            if line.startswith('# '):
-                return line.replace('# ', '')
-
-def prepare_prompt(file_contents: Dict[str, str], project_title: str) -> str:
-    """Prepare the prompt for the AI model."""
-    prompt = f"""
-Create a formal academic research proposal for a project titled "{project_title}".
-
-Use the following content from previous design documents to create a comprehensive, well-structured academic research proposal. Format it according to standard academic conventions with proper sections, citations, and academic tone.
-
-The research proposal should include:
-1. Title Page
-2. Abstract
-3. Introduction and Problem Statement
-4. Literature Review
-5. Research Questions and Objectives
-6. Methodology and Technical Approach
-7. Implementation Plan and Timeline
-8. Expected Results and Impact
-9. Conclusion
-10. References
-
-Below are the source documents to synthesize into the proposal:
-
-"""
-    
-    # Add each file's content to the prompt
-    # Iterate deterministically over provided files (by section/file name)
-    for file_name in sorted(file_contents.keys(), key=lambda x: x.lower()):
-        section_name = file_name.replace('.md', '').replace('_', ' ').title()
-        prompt += f"\n===== {section_name} =====\n"
-        prompt += file_contents[file_name]
-        prompt += "\n\n"
-
-    prompt += """
-Create a cohesive, professionally formatted academic research proposal that integrates these materials. 
-Use formal academic language and structure. Ensure proper citation of external works where appropriate.
-Focus on presenting this as a serious, innovative research initiative with clear methodology and expected outcomes.
-The proposal should be comprehensive enough for submission to a major research funding organization.
-"""
-
-    return prompt
-
-def save_proposal(content: str, output_path: Path) -> None:
-    """Save the generated proposal to a file."""
-    with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(content)
-    print(f"Research proposal saved to {output_path}")
-
-def check_environment_variables():
-    """Check and display the status of environment variables."""
-    print("\nEnvironment Variable Status:")
-    
-    # Check for Anthropic API key
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
-    if anthropic_key:
-        key_preview = anthropic_key[:6] + "..." + anthropic_key[-4:] if len(anthropic_key) > 10 else "***"
-        print(f"✓ ANTHROPIC_API_KEY is set: {key_preview}")
-    else:
-        print("❌ ANTHROPIC_API_KEY is not set in environment variables")
-    
-    # Check for DeepSeek API key
-    deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
-    if deepseek_key:
-        key_preview = deepseek_key[:6] + "..." + deepseek_key[-4:] if len(deepseek_key) > 10 else "***" 
-        print(f"✓ DEEPSEEK_API_KEY is set: {key_preview}")
-    else:
-        print("❌ DEEPSEEK_API_KEY is not set in environment variables")
-        
-    # List all environment variables (for debugging)
-    print("\nDebug: All environment variable names:")
-    for i, (key, _) in enumerate(os.environ.items()):
-        print(f"  {key}")
-        if i >= 20:  # Limit to first 20 to avoid overwhelming output
-            print(f"  ... and {len(os.environ) - 20} more")
-            break
-
-def generate_ai_proposal(model: str = "claude") -> None:
-    """
-    Generate a research proposal using AI.
-    
-    Args:
-        model: The AI model to use ('claude' or 'deepseek')
-    """
-    # Check environment variables
-    check_environment_variables()
-    
-    # Enforce ingestion ONLY from INPUT/
-    COGITO_ROOT = Path(__file__).resolve().parents[2]
-    input_dir = COGITO_ROOT / "INPUT"
-    output_folder = Path("some_project")
-    
-    if not input_dir.exists() or not input_dir.is_dir():
-        print(f"Error: INPUT directory does not exist at {input_dir}")
-        return
-    
-    # Discover and read all files under INPUT/ (recursive); supports arbitrary number of files
-    file_contents = {}
+    # Build and execute workflow
     try:
-        candidates = find_all_input_files(base_dir=str(COGITO_ROOT), input_dir_name="INPUT", recursive=True)
-    except Exception as e:
-        print(f"Error discovering INPUT files: {e}")
-        return
-    
-    if not candidates:
-        print(f"Error: No input files found under {input_dir}")
-        return
-    
-    from os.path import basename
-    for abs_path in candidates:
-        try:
-            name = basename(abs_path)
-            file_contents[name] = read_file_content(Path(abs_path))
-        except Exception as e:
-            print(f"Warning: failed to read {abs_path}: {e}")
-    
-    # Get project title
-    project_title = "INPUT Corpus"
-    
-    # Prepare the prompt
-    prompt = prepare_prompt(file_contents, project_title)
-    
-    # Save the prompt for reference
-    with open(output_folder / "ai_prompt.txt", 'w', encoding='utf-8') as f:
-        f.write(prompt)
-    print(f"Prompt saved to {output_folder}/ai_prompt.txt")
-    
-    # Call the appropriate AI client directly with the correct method
-    ai_response = None
->>>>>>> 7f5694d (Add comprehensive test scripts for LaTeX configuration, content extraction, and vector store functionality)
+        service, repository = build_service(project_dir, model=args.model)
+    except OSError as exc:
+        print(f"Error: Failed to prepare project directory '{project_dir}': {exc}")
+        return 1
+
     try:
         result = service.generate_proposal(max_tokens=args.max_tokens)
     except ProjectDocumentsNotFound as exc:
@@ -243,9 +170,22 @@ def generate_ai_proposal(model: str = "claude") -> None:
         print(f"Error: Failed to write proposal artefacts: {exc}")
         return 1
 
-    print(f"Prompt saved to {repository.prompt_path}")
-    print(f"Research proposal saved to {repository.proposal_path}")
-    print(f"Project title: {result.project_title}")
+    # Best-effort: print known output paths if repository exposes them
+    try:
+        if hasattr(repository, "prompt_path"):
+            print(f"Prompt saved to {repository.prompt_path}")
+        if hasattr(repository, "proposal_path"):
+            print(f"Research proposal saved to {repository.proposal_path}")
+    except Exception:
+        # Avoid failing after successful generation for display-only paths
+        pass
+
+    # Report derived metadata if available
+    try:
+        print(f"Project title: {result.project_title}")
+    except Exception:
+        pass
+
     return 0
 
 

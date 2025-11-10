@@ -2,18 +2,18 @@
 Configuration loader for the Critique Council application.
 
 This module provides utilities for loading and accessing configuration settings
-from the centralized YAML configuration file.
+from the centralized JSON configuration file (config.json).
 """
 
 import os
-import yaml
+import json
 from typing import Dict, Any, Optional
 
 class ConfigLoader:
     """
     Configuration loader for the Critique Council application.
     
-    This class loads configuration settings from the YAML configuration file
+    This class loads configuration settings from the JSON configuration file
     and provides access to them through a unified interface.
     """
     
@@ -22,12 +22,12 @@ class ConfigLoader:
         Initialize the configuration loader.
         
         Args:
-            config_path: Path to the YAML configuration file. If not provided,
-                        defaults to 'config.yaml' in the project root.
+            config_path: Path to the JSON configuration file. If not provided,
+                        defaults to 'config.json' in the project root.
         """
         self.config_path = config_path or os.path.join(
             os.path.dirname(os.path.dirname(__file__)),
-            'config.yaml'
+            'config.json'
         )
         self._config: Optional[Dict[str, Any]] = None
         if eager_load:
@@ -35,7 +35,7 @@ class ConfigLoader:
 
     def _load_config(self) -> Dict[str, Any]:
         """
-        Load configuration from the YAML file.
+        Load configuration from the JSON file.
         
         Returns:
             Dictionary containing the configuration settings. Missing configuration
@@ -43,17 +43,17 @@ class ConfigLoader:
             loader without crashing.
             
         Raises:
-            yaml.YAMLError: If the configuration file has invalid YAML syntax.
+            json.JSONDecodeError: If the configuration file has invalid JSON syntax.
         """
         if not os.path.exists(self.config_path):
             return {}
             
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
-                config = yaml.safe_load(f)
+                config = json.load(f)
                 return config or {}
-        except yaml.YAMLError as e:
-            raise yaml.YAMLError(f"Error parsing YAML configuration: {str(e)}")
+        except json.JSONDecodeError as e:
+            raise json.JSONDecodeError(f"Error parsing JSON configuration: {str(e)}", doc=str(e), pos=0)
             
     def _ensure_loaded(self) -> None:
         if self._config is None:

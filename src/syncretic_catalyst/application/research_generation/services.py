@@ -11,7 +11,7 @@ from ...domain import (
     ProjectDocument,
     ResearchProposalResult,
 )
-from ...prompt_texts import (
+from src.prompt_texts import (
     RESEARCH_GENERATION_SYSTEM_PROMPT,
     RESEARCH_PROPOSAL_PROMPT_TEMPLATE,
 )

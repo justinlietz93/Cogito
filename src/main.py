@@ -6,7 +6,7 @@ from typing import Any, Dict, Mapping, Optional, Union
 import json
 import logging
 
-from .input_reader import read_file_content
+from .input_reader import read_file_content, enforce_input_only
 from .pipeline_input import (
     EmptyPipelineInputError,
     InvalidPipelineInputError,
@@ -46,6 +46,13 @@ def critique_goal_document(
 
     try:
         logger.debug("Normalising pipeline input...")
+
+        # Enforce INPUT-only ingestion when a filesystem path is provided
+        if isinstance(input_data, str):
+            import os as _os  # local alias to avoid module-level import churn
+            if _os.path.exists(input_data) and _os.path.isfile(input_data):
+                enforce_input_only(input_data)
+
         pipeline_input = ensure_pipeline_input(
             input_data,
             read_file=read_file_content,

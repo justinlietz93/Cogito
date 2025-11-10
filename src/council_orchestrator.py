@@ -8,6 +8,7 @@ Runs agents sequentially and distributes content points among critics.
 """
 import logging
 import random
+import os
 from typing import Dict, List, Any, Type, Optional, Union, Mapping
 
 # Import agent implementations
@@ -23,6 +24,7 @@ from .reasoning_agent import (
 )
 from .content_assessor import ContentAssessor
 from .pipeline_input import PipelineInput, ensure_pipeline_input
+from .input_reader import enforce_input_only
 from .council.logging import setup_agent_logger
 from .council.adjustments import apply_self_critique_feedback, apply_arbitration_adjustments
 from .council.synthesis import collect_significant_points
@@ -48,7 +50,12 @@ def run_critique_council(
 
     root_logger = logging.getLogger(__name__)
     config = dict(config or {})
-
+    
+    # Enforce INPUT-only ingestion when a filesystem path is provided
+    if isinstance(input_data, str):
+        if os.path.exists(input_data) and os.path.isfile(input_data):
+            enforce_input_only(input_data)
+    
     pipeline_input = ensure_pipeline_input(input_data, allow_empty=True)
     content = pipeline_input.content
 

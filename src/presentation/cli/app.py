@@ -223,10 +223,16 @@ class CliApp:
         if isinstance(raw_input, Mapping):
             return raw_input, None
         if isinstance(raw_input, Path):
+            # Accept both files and directories for batch ingestion
+            if raw_input.is_dir():
+                return DirectoryInputRequest(root=raw_input), None
             return FileInputRequest(path=raw_input), None
         if isinstance(raw_input, str):
             candidate = Path(raw_input).expanduser()
             if candidate.exists():
+                # Accept both files and directories for batch ingestion
+                if candidate.is_dir():
+                    return DirectoryInputRequest(root=candidate), None
                 return FileInputRequest(path=candidate), None
             try:
                 literal_request = LiteralTextInputRequest(text=raw_input)
@@ -320,7 +326,11 @@ class CliApp:
         if isinstance(input_data, Mapping):
             return ensure_pipeline_input(input_data)
         if isinstance(input_data, Path):
-            return FileInputRequest(path=input_data)
+            return (
+                DirectoryInputRequest(root=input_data)
+                if input_data.is_dir()
+                else FileInputRequest(path=input_data)
+            )
         if isinstance(input_data, str):
             return LiteralTextInputRequest(text=input_data)
         return ensure_pipeline_input(input_data)

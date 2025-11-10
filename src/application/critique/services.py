@@ -25,6 +25,7 @@ from .configuration import ModuleConfigBuilder
 from .ports import ContentRepositoryFactory, CritiqueGateway
 from .requests import DirectoryInputRequest, FileInputRequest, LiteralTextInputRequest
 from ...pipeline_input import InvalidPipelineInputError, PipelineInput
+from .input_gating import gate_pipeline_input_for_model
 from ..preflight.orchestrator import (
     PreflightOptions,
     PreflightOrchestrator,
@@ -133,6 +134,8 @@ class CritiqueRunner:
                     del pipeline_input.metadata["preflight_artifacts"]
 
         module_config = self._config_builder.build()
+        # Apply input gating to prevent provider context overflows while preserving metadata.
+        pipeline_input = gate_pipeline_input_for_model(pipeline_input, module_config)
         critique_report = self._gateway.run(
             pipeline_input,
             module_config,
@@ -170,6 +173,22 @@ class CritiqueRunner:
             repository = self._repository_factory.create_for_directory(input_source)
             return repository.load_input()
         if isinstance(input_source, FileInputRequest):
+            # Defensive conversion: if a directory path was wrapped as FileInputRequest,
+            # aggregate it as a directory to allow multi-file ingestion.
+            try:
+                candidate = input_source.path.expanduser()
+                if candidate.exists() and candidate.is_dir():
+                    _LOGGER.warning(
+                        "Coercing FileInputRequest with directory path '%s' to DirectoryInputRequest",
+                        candidate,
+                    )
+                    repository = self._repository_factory.create_for_directory(
+                        DirectoryInputRequest(root=candidate)
+                    )
+                    return repository.load_input()
+            except Exception:
+                # Fall through to standard single-file handling
+                pass
             repository = self._repository_factory.create_for_file(input_source)
             return repository.load_input()
         if isinstance(input_source, LiteralTextInputRequest):
@@ -181,7 +200,7 @@ class CritiqueRunner:
             _LOGGER.debug("Treating raw string input as literal pipeline content.")
             return PipelineInput(content=input_source, metadata={"input_type": "text"})
         raise InvalidPipelineInputError(f"Unsupported critique input type: {type(input_source)!r}")
-
+ 
     def _record_recent_source(self, pipeline_input: PipelineInput) -> None:
         """Record the pipeline input source within the settings service."""
 
