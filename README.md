@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <em>A remarkable AI research platform that dramatically accelerates your pursuit of knowledge synthesis, critique, and discovery.</em>
+  <em>An AI powered research platform that dramatically accelerates your pursuit of knowledge synthesis, critique, and discovery.</em>
 </p>
 
 <p align="center">
